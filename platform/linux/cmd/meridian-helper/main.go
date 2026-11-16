@@ -61,7 +61,16 @@ func (h *helper) broadcast(t core.ControlMessageType, p any) error {
 		return nil
 	}
 	if t == core.ControlError {
-		p = core.ControlErrorPayload{Code: core.ControlErrConnectFailed, Message: "Не удалось подключиться"}
+		// Preserve only known, non-sensitive failure codes. Raw engine errors
+		// can include addresses or credentials and must not be forwarded.
+		failure := ""
+		if original, ok := p.(core.ControlErrorPayload); ok {
+			switch original.Failure {
+			case core.FailureAPIUnavailable, "network", "refused", "resolve", "silent", "blocked", "blocked-nolinks", "blocked-linksdead", "blocked-captcha", "blocked-links", "blocked-relay", "unknown":
+				failure = original.Failure
+			}
+		}
+		p = core.ControlErrorPayload{Code: core.ControlErrConnectFailed, Message: "Не удалось подключиться", Failure: failure}
 	}
 	for _, c := range cs {
 		_ = c.send(t, p)

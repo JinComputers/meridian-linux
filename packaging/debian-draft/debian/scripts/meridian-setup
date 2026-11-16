@@ -1,0 +1,35 @@
+#!/bin/sh
+# Invoked by pkexec, which supplies the authenticated caller's UID.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+[ "$(id -u)" = 0 ] || { echo 'Administrator privileges required.' >&2; exit 1; }
+uid=${PKEXEC_UID-}
+case "$uid" in ''|*[!0-9]*|0) echo 'A non-root authenticated caller is required.' >&2; exit 1;; esac
+[ "$uid" -lt 4294967295 ] 2>/dev/null || exit 1
+awk -F: -v uid="$uid" '$3 == uid { n++ } END { exit n == 1 ? 0 : 1 }' /etc/passwd || { echo 'No unique local account for this UID.' >&2; exit 1; }
+dir=/etc/meridian
+config=$dir/helper.env
+[ ! -L "$dir" ] && [ -d "$dir" ] || { echo 'Untrusted configuration directory.' >&2; exit 1; }
+[ "$(stat -c %u "$dir")" = 0 ] && [ "$(stat -c %a "$dir")" = 755 ] || exit 1
+[ ! -L "$config" ] && [ -f "$config" ] && [ "$(stat -c %u "$config")" = 0 ] || { echo 'Untrusted configuration file.' >&2; exit 1; }
+runtime=/run/meridian
+mkdir -m 0755 "$runtime" 2>/dev/null || :
+[ ! -L "$runtime" ] && [ -d "$runtime" ] && [ "$(stat -c %u "$runtime")" = 0 ] && [ "$(stat -c %a "$runtime")" = 755 ] || exit 1
+[ ! -L "$runtime/setup.lock" ] || exit 1
+exec 9>"$runtime/setup.lock"
+flock -x 9
+[ ! -e "$runtime/state.json" ] && [ ! -L "$runtime/state.json" ] || { echo 'Network recovery is required first.' >&2; exit 1; }
+# Reject anything other than the single generated value and comments; never source it.
+value=$(awk 'BEGIN { n=0; bad=0 } /^#/ || /^[[:space:]]*$/ { next } /^MERIDIAN_UID=[0-9]*$/ { n++; sub(/^MERIDIAN_UID=/, ""); v=$0; next } { bad=1 } END { if (bad || n!=1) exit 1; print v }' "$config") || { echo 'Invalid Meridian configuration.' >&2; exit 1; }
+[ -z "$value" ] || [ "$value" = "$uid" ] || { echo 'Meridian is configured for another account.' >&2; exit 1; }
+if [ -z "$value" ]; then
+    tmp=$(mktemp "$dir/.helper.env.XXXXXXXX")
+    trap 'test -z "${tmp-}" || unlink "$tmp"' EXIT HUP INT TERM
+    chmod 0600 "$tmp"
+    printf '# Managed by Meridian setup; contains no subscriber key.\nMERIDIAN_UID=%s\n' "$uid" > "$tmp"
+    mv -f "$tmp" "$config"
+    tmp=
+fi
+systemctl enable meridian-helper.service >/dev/null
+systemctl start meridian-helper.service

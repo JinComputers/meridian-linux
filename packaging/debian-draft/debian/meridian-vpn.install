@@ -1,4 +1,7 @@
-out/meridian-vpn usr/bin/
+out/meridian-vpn usr/libexec/meridian/
 out/meridian-helper usr/libexec/meridian/
+debian/scripts/meridian-setup usr/libexec/meridian/
+debian/scripts/meridian-vpn usr/bin/
 debian/config/helper.env etc/meridian/
 debian/assets/meridian-vpn.desktop usr/share/applications/
+debian/assets/meridian-vpn.svg usr/share/icons/hicolor/scalable/apps/

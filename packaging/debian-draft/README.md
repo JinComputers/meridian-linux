@@ -6,11 +6,11 @@ separately built and verified binaries in `out/meridian-vpn` and
 Linux backend, frontend, installation lifecycle and network cleanup need further
 validation before any package can be distributed.
 
-The package does not enable or start the helper on install or upgrade. The unit
+The package does not enable or start the helper on install or upgrade. The graphical launcher asks for administrator authorization on first launch, and successful setup enables and starts the helper; see INTEGRATION.md. The unit
 passes no `--enable-unverified-network` flag, so connecting remains disabled.
-The helper takes a single explicit non-root numeric UID in
+The helper takes a single non-root numeric UID in
 `/etc/meridian/helper.env`; the shipped value is empty and the file is a Debian
-configuration file. No account is guessed, created or enrolled. Never put a
+configuration file. The authenticated launching user is enrolled on first setup; no account is created. Never put a
 subscriber key in it. The unit keeps the runtime directory across a service stop.
 The pre-removal hook stops the service and refuses removal or upgrade if its
 network journal remains. Do not remove that journal to bypass the check: the

@@ -8,6 +8,6 @@ Rules-Requires-Root: no
 
 Package: meridian-vpn
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}, systemd, systemd-resolved, iproute2, nftables, libsecret-tools
+Depends: ${misc:Depends}, ${shlibs:Depends}, systemd, systemd-resolved, iproute2, nftables, libsecret-tools, pkexec, util-linux, zenity
 Description: Experimental Meridian VPN desktop client
  Debian packaging draft. This package is not a production release.

@@ -179,3 +179,29 @@ func TestReconnectWaitsForPriorCleanup(t *testing.T) {
 	}
 	h.shutdown()
 }
+
+func TestBroadcastFailureNeverExposesRawError(t *testing.T) {
+	for _, tc := range []struct{ input, expected string }{
+		{"resolve", "resolve"},
+		{"synthetic-private-value", ""},
+	} {
+		a, b := net.Pipe()
+		h := &helper{clients: map[*client]bool{&client{conn: a}: true}}
+		done := make(chan struct{})
+		go func() {
+			_ = h.broadcast(core.ControlError, core.ControlErrorPayload{Code: core.ControlErrConnectFailed, Message: "synthetic-private-value", Failure: tc.input})
+			close(done)
+		}()
+		env, err := core.ReadControlMessage(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := core.DecodeControlPayload[core.ControlErrorPayload](env)
+		if err != nil || got.Failure != tc.expected || got.Message != "Не удалось подключиться" {
+			t.Fatalf("unexpected sanitized failure: %+v %v", got, err)
+		}
+		<-done
+		a.Close()
+		b.Close()
+	}
+}

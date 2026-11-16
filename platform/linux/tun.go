@@ -71,22 +71,11 @@ func (f *TunFlow) SetInboundHook(h func(pkt []byte)) {
 // поймал панику живым прогоном (см. tunOffset).
 const frameHeaderLen = 2
 
-// tunOffset — отступ, которого требует golang.zx2c4.com/wireguard/tun
-// САМ, на уровне сырого чтения/записи в utun на macOS (tun_darwin.go,
-// NativeTun.Read/Write): ядро добавляет к каждому пакету на утуне 4
-// байта заголовка семейства адресов (AF_INET/AF_INET6), и обёртка
-// wireguard-go ждёт эти 4 байта ДО данных пакета — Read делает
-// `buf[offset-4:]`, Write делает то же и сама заполняет эти 4 байта.
-// offset < 4 → Read паникует на отрицательном индексе среза, Write
-// возвращает io.ErrShortBuffer.
-//
-// Живой прогон -mode=connect поймал это: первая версия файла путала
-// tunOffset с frameHeaderLen (оба использовались как один параметр
-// offset для dev.Read/dev.Write) — паника
-// "slice bounds out of range [-2:]" (2-4) в NativeTun.Read.
-const tunOffset = 0
+// Linux WireGuard TUN may enable virtio-net offloads. Write requires at least
+// 10 bytes of headroom for the virtio header; 16 leaves a safe margin.
+const tunOffset = 16
 
-// defaultTunName — "" → "meridian%d" (ядро само подставит номер: "utunN").
+// defaultTunName выбирает имя интерфейса для Linux.
 // core.ConnectOptions.TunName документирует пустую строку как «платформа
 // выбирает сама», но tun.CreateTUN пустое имя НЕ принимает вообще —
 // требует "utun[0-9]*" и падает с "Interface name must be utun[0-9]*".

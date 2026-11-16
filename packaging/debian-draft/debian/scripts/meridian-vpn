@@ -1,0 +1,22 @@
+#!/bin/sh
+# The graphical program always runs as the original user, never as root.
+uid=$(id -u)
+socket=/run/meridian/control.sock
+if ! systemctl is-active --quiet meridian-helper.service || [ ! -S "$socket" ] || [ "$(stat -c %u "$socket" 2>/dev/null)" != "$uid" ]; then
+    if pkexec /usr/libexec/meridian/meridian-setup; then
+        # systemd Type=simple can report started before the socket exists.
+        i=0
+        while [ "$i" -lt 40 ]; do
+            if [ -S "$socket" ] && [ "$(stat -c %u "$socket" 2>/dev/null)" = "$uid" ]; then break; fi
+            if ! systemctl is-active --quiet meridian-helper.service; then break; fi
+            i=$((i + 1))
+            sleep 0.25
+        done
+        if [ ! -S "$socket" ] || [ "$(stat -c %u "$socket" 2>/dev/null)" != "$uid" ]; then
+            zenity --warning --title='Meridian VPN' --text='Системная служба не ответила после запуска. Проверьте её состояние и повторите попытку.' || :
+        fi
+    else
+        zenity --warning --title='Meridian VPN' --text='Системная служба не запущена. Чтобы повторить настройку, закройте приложение и запустите его снова; затем подтвердите запрос администратора.' || :
+    fi
+fi
+exec /usr/libexec/meridian/meridian-vpn "$@"

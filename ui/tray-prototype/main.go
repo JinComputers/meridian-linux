@@ -1149,31 +1149,10 @@ func (a *app) sendConnect() {
 		// режиме без релея в лестнице эти поля ни на что не влияют.
 		Ladder: core.LadderOptions{Hashes: hashes, SlotsStart: 48, SlotsMax: 48, NoAutoSlots: true},
 	}
+	// Linux currently supports a full tunnel only. Split-tunnel options are
+	// deliberately omitted until the service implements and verifies them.
 	a.state.mu.Lock()
-	white := a.state.whiteMode
-	a.state.mu.Unlock()
-	if white {
-		// Белый режим — «в туннель всё, кроме российских адресов» (владелец
-		// 24.10: ссылки на звонки нужны только запасному релейному пути, а
-		// не самому режиму). Транспорт — обычная лестница: прямые ступени,
-		// релей запасным, если ссылки есть. Общий список прямых доменов
-		// применяется при любом победившем пути в белом режиме.
-		// Свой список прямых доменов убран из интерфейса (27.09) —
-		// payload.DirectDomains не заполняем, RUDirect несёт встроенный список.
-		payload.RUDirect = true // Общий список доменов и исключений в белом режиме.
-	} else {
-		// Чёрный режим (lists.go): в туннель только список; пустой — ничего.
-		payload.TunnelOnly = true
-		payload.TunnelDomains = core.ParseDirectDomains(readTunnelDomains())
-		// Обход DPI-блокировок — только в чёрном режиме (трафик мимо
-		// списка идёт напрямую через провайдера, белый и так через
-		// ВК-релей, там DPI провайдера трафик не видит).
-		payload.AntiDPI = loadSettings().antiDPIGroups()
-		// Приложения в туннель (apps.go): тот же режим, тот же журнал.
-		payload.TunnelApps = tunnelAppPaths(loadSettings())
-	}
-	a.state.mu.Lock()
-	a.state.sessionWhite = white
+	a.state.sessionWhite = true
 	a.state.mu.Unlock()
 	a.setNotice(uiConnecting, "", false)
 	a.armSlowHint()
