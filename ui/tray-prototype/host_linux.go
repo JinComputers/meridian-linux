@@ -31,6 +31,10 @@ func appSupportDir() string {
 	}
 	return filepath.Join(d, "Meridian")
 }
+func showStartupError(message string) {
+	_ = exec.Command("zenity", "--error", "--title=Meridian VPN", "--text="+message).Run()
+}
+
 func hostUnavailableText(err error) string {
 	return fmt.Sprintf("Служба Meridian недоступна: %v", err)
 }

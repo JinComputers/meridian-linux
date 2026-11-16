@@ -381,7 +381,8 @@ func main() {
 	deviceID, err := loadOrCreateDeviceID()
 	if err != nil {
 		log.Println("loadOrCreateDeviceID:", err)
-		deviceID = deviceIDPrefix + "fallback"
+		showStartupError("Не удалось сохранить идентификатор устройства. Проверьте доступ к каталогу настроек и запустите Meridian снова.")
+		return
 	}
 
 	var window *application.WebviewWindow
