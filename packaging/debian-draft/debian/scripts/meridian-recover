@@ -12,6 +12,16 @@ config=$dir/helper.env
 [ ! -L "$config" ] && [ -f "$config" ] && [ "$(stat -c %u "$config")" = 0 ] && [ "$(stat -c %a "$config")" = 600 ] && [ "$(stat -c %h "$config")" = 1 ] || exit 1
 configured=$(awk 'BEGIN { n=0; bad=0 } /^#/ || /^[[:space:]]*$/ { next } /^MERIDIAN_UID=[0-9]+$/ { n++; sub(/^MERIDIAN_UID=/, ""); v=$0; next } { bad=1 } END { if (bad || n!=1) exit 1; print v }' "$config") || exit 1
 [ "$configured" = "$uid" ] || { echo 'Meridian is configured for another account.' >&2; exit 1; }
+# This entry point is authorized only for an existing unresolved journal.
+# Stop the service and wait for its normal cleanup; timeout never kills the
+# helper. A still-running process retains the helper lock and recovery fails.
+[ -f /run/meridian/state.json ] && [ ! -L /run/meridian/state.json ] || { echo 'No trusted network journal to recover.' >&2; exit 1; }
+if ! timeout 60 systemctl stop meridian-helper.service; then
+    echo 'Service did not stop; network state retained.' >&2
+    exit 1
+fi
+state=$(systemctl show --property=ActiveState --value meridian-helper.service) || exit 1
+case "$state" in inactive|failed) ;; *) echo 'Service is still running; network state retained.' >&2; exit 1;; esac
 # The helper takes its own lock and refuses live/unknown journal owners.
 /usr/libexec/meridian/meridian-helper --recover-network
 # Use the same pkexec authorization to start the explicitly configured service.

@@ -307,13 +307,16 @@ type app struct {
 	hintMu     sync.Mutex
 	helperHint string
 
-	state             uiState
-	hc                helperConn
-	recoveryAvailable atomic.Bool
-	recoveryMode      atomic.Bool
-	recoveryTemporary atomic.Bool
-	recoveryKeyMu     sync.Mutex
-	recoveryKey       string
+	state uiState
+	hc    helperConn
+	// A cleanup failure is offered once until the helper confirms a clean state.
+	networkRecoveryOffered atomic.Bool
+	quitWarningOpen        atomic.Bool
+	recoveryAvailable      atomic.Bool
+	recoveryMode           atomic.Bool
+	recoveryTemporary      atomic.Bool
+	recoveryKeyMu          sync.Mutex
+	recoveryKey            string
 
 	deviceID string
 
@@ -432,6 +435,13 @@ func main() {
 		Windows:          application.WindowsWindow{HiddenOnTaskbar: true},
 	})
 
+	// Keep the window reachable in the task switcher even without a tray.
+	// A native close request must not leave a running VPN without an UI.
+	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		e.Cancel()
+		window.Minimise()
+	})
+
 	tray := wapp.SystemTray.New()
 	menu := wapp.NewMenu()
 	toggleItem := menu.Add("Подключить")
@@ -450,7 +460,7 @@ func main() {
 	// НЕ AttachWindow: тот каждый раз ставит окно у значка, а владелец
 	// просит открывать там, куда окно перетащили (showWindow/hideWindow).
 	tray.OnClick(func() {
-		if window.IsVisible() {
+		if window.IsVisible() && !window.IsMinimised() {
 			theApp.hideWindow()
 		} else {
 			theApp.showWindow()
@@ -485,7 +495,7 @@ func main() {
 	toggleItem.OnClick(func(ctx *application.Context) { a.toggle() })
 	settingsItem.OnClick(func(ctx *application.Context) { a.showWindow(); wapp.Event.Emit("show-settings", nil) })
 	autoItem.OnClick(func(ctx *application.Context) { a.toggleAutostart(); a.applyLocal() })
-	quitItem.OnClick(func(ctx *application.Context) { a.rememberWindowPos(); wapp.Quit() })
+	quitItem.OnClick(func(ctx *application.Context) { a.quitFromTray() })
 	updateItem.SetHidden(true)
 
 	on := func(name string, f func(data any)) {
@@ -691,6 +701,9 @@ func (a *app) handleEnvelope(env core.ControlEnvelope) {
 		if err != nil {
 			return
 		}
+		if !st.Connected {
+			a.networkRecoveryOffered.Store(false)
+		}
 		a.state.mu.Lock()
 		a.state.clearHelperUnavailable()
 		wasError := a.state.kind == uiError
@@ -763,6 +776,9 @@ func (a *app) handleEnvelope(env core.ControlEnvelope) {
 		}
 		log.Printf("отказ: code=%s failure=%s: %s", ep.Code, ep.Failure, ep.Message)
 		a.setNotice(uiError, withConflictHint(connectFailureText(ep), ep), true)
+		if ep.Code == "cleanup_failed" {
+			a.offerNetworkRecovery()
+		}
 	case core.ControlCaptchaRequest:
 		if cp, err := core.DecodeControlPayload[core.ControlCaptchaPayload](env); err == nil {
 			a.onCaptchaRequest(cp)
@@ -821,6 +837,8 @@ func failureText(ep core.ControlErrorPayload) string {
 		return ""
 	}
 	switch ep.Failure {
+	case core.FailureSystemDNSUnavailable:
+		return "Не удалось безопасно настроить DNS. Проверьте, что systemd-resolved запущен и системный DNS использует 127.0.0.53; затем повторите подключение."
 	case core.FailureAPIUnavailable:
 		return "Не удалось связаться с серверами Meridian. Возможно, сеть или провайдер блокирует соединение. Попробуйте другую сеть (например, раздачу с телефона) или укажите в настройках сети DNS 1.1.1.1"
 	case "resolve":
@@ -1746,11 +1764,56 @@ func (a *app) showWindow() {
 	a.posMu.Lock()
 	a.placedX, a.placedY = x, y
 	a.posMu.Unlock()
+	a.window.UnMinimise()
 	a.window.Show().Focus()
 	a.refreshKeyInfoSoon()
 }
 
+// Only the explicitly authorized recovery operation may remove the firewall.
+func (a *app) offerNetworkRecovery() {
+	if !a.networkRecoveryOffered.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		recovered, err := promptAndRecoverNetwork(runRecoveryCommand)
+		if err != nil {
+			a.setNotice(uiError, "Восстановление сети не завершено. Обратитесь в поддержку; журнал Meridian сохранён.", true)
+			return
+		}
+		if recovered {
+			a.setNotice(uiDisconnected, "Сеть восстановлена без VPN.", false)
+		}
+	}()
+}
+
 func (a *app) hideWindow() {
+	a.window.Minimise()
+}
+
+// Keep a visible way to disconnect before explicitly quitting the GUI.
+func (a *app) quitFromTray() {
+	a.state.mu.Lock()
+	kind, unavailable := a.state.kind, a.state.helperUnavailable
+	a.state.mu.Unlock()
+	if kind == uiConnected || kind == uiConnecting {
+		a.showWindow()
+		a.setNotice(kind, "Перед выходом отключите VPN нажатием на планету.", false)
+		return
+	}
+	if unavailable || a.networkRecoveryOffered.Load() {
+		if !a.quitWarningOpen.CompareAndSwap(false, true) {
+			return
+		}
+		go func() {
+			defer a.quitWarningOpen.Store(false)
+			if confirmQuitUncertain() {
+				a.rememberWindowPos()
+				a.wails.Quit()
+			}
+		}()
+		return
+	}
+	a.rememberWindowPos()
 	a.wails.Quit()
 }
 

@@ -35,6 +35,33 @@ func showStartupError(message string) {
 	_ = exec.Command("zenity", "--error", "--title=Meridian VPN", "--text="+message).Run()
 }
 
+func confirmQuitUncertain() bool {
+	return exec.Command("zenity", "--question", "--title=Закрыть Meridian VPN?", "--text=Состояние VPN или восстановление сети не подтверждено. Закрытие окна не остановит службу и не восстановит сеть. Закрыть приложение?", "--ok-label=Закрыть", "--cancel-label=Отмена").Run() == nil
+}
+
+type recoveryCommand func(name string, args ...string) error
+
+func runRecoveryCommand(name string, args ...string) error {
+	return exec.Command(name, args...).Run()
+}
+
+// promptAndRecoverNetwork distinguishes an explicit cancellation from errors;
+// the privileged operation runs only after the user accepts the warning.
+func promptAndRecoverNetwork(run recoveryCommand) (bool, error) {
+	err := run("zenity", "--question", "--title=Восстановить доступ к сети?", "--text=Восстановление снимет защиту Meridian и вернёт обычный доступ к сети без VPN. Продолжить?", "--ok-label=Восстановить", "--cancel-label=Отмена")
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, err
+	}
+	if err := run("pkexec", "/usr/libexec/meridian/meridian-recover"); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func hostUnavailableText(err error) string {
 	return fmt.Sprintf("Служба Meridian недоступна: %v", err)
 }

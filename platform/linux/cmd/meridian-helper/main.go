@@ -62,7 +62,7 @@ func (h *helper) broadcast(t core.ControlMessageType, p any) error {
 		failure := ""
 		if original, ok := p.(core.ControlErrorPayload); ok {
 			switch original.Failure {
-			case core.FailureAPIUnavailable, "network", "refused", "resolve", "silent", "blocked", "blocked-nolinks", "blocked-linksdead", "blocked-captcha", "blocked-links", "blocked-relay", "unknown":
+			case core.FailureAPIUnavailable, core.FailureSystemDNSUnavailable, "network", "refused", "resolve", "silent", "blocked", "blocked-nolinks", "blocked-linksdead", "blocked-captcha", "blocked-links", "blocked-relay", "unknown":
 				failure = original.Failure
 			}
 		}

@@ -1,15 +1,20 @@
 #!/usr/bin/make -f
+export GOTOOLCHAIN := local
+export GOFLAGS := -mod=readonly -trimpath -buildvcs=false
+
 %:
 	dh $@
 
 override_dh_auto_build:
-	@test -x out/meridian-vpn && test -x out/meridian-helper || (echo 'Stage audited binaries under out/ before packaging' >&2; exit 1)
+	@test -n "$(MERIDIAN_BUILD_COMMIT)" -a -n "$(SOURCE_DATE_EPOCH)" || (echo 'Use scripts/build-deb-preview.sh from a clean, committed checkout' >&2; exit 1)
+	@test "$$(go env GOVERSION)" = "go1.27.1" || (echo 'Go 1.27.1 is required' >&2; exit 1)
+	@mkdir -p out
+	CGO_ENABLED=0 go build -ldflags='-buildid=' -o out/meridian-helper ./platform/linux/cmd/meridian-helper
+	cd ui/tray-prototype && CGO_ENABLED=1 go build -tags gtk3 -ldflags='-buildid=' -o ../../out/meridian-vpn .
+	@{ printf 'Source commit: %s\nSource date epoch: %s\n' '$(MERIDIAN_BUILD_COMMIT)' '$(SOURCE_DATE_EPOCH)'; go version; cc --version | head -n 1; pkg-config --modversion gtk+-3.0 webkit2gtk-4.1; sha256sum out/meridian-vpn out/meridian-helper; } > out/build-info.txt
 
 override_dh_auto_install:
-	# The separately staged binaries are installed by dh_install.
-
-override_dh_install:
-	dh_install
+	# dh_install copies the binaries and provenance generated above.
 
 override_dh_fixperms:
 	dh_fixperms

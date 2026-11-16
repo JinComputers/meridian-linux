@@ -790,6 +790,8 @@ func RunControlConnect(
 		failure := ""
 		var pe *ParamsError
 		switch {
+		case errors.Is(err, ErrSystemDNSUnavailable):
+			failure = FailureSystemDNSUnavailable
 		case errors.As(err, &se):
 			failure = se.Failure
 		case errors.As(err, &pe) && pe.Kind == ParamsKindUnavailable:

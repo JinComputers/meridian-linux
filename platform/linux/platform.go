@@ -65,14 +65,14 @@ func (p *Platform) Snapshot(ctx context.Context, st *core.State) error {
 		return errors.New("Linux: expected exactly one IPv4 default route")
 	}
 	if _, err = p.run.Run(ctx, resolvectl, "status"); err != nil {
-		return fmt.Errorf("Linux: systemd-resolved unavailable: %w", err)
+		return fmt.Errorf("%w: systemd-resolved unavailable", core.ErrSystemDNSUnavailable)
 	}
 	resolvConf, err := os.ReadFile("/etc/resolv.conf")
 	if err != nil {
-		return fmt.Errorf("Linux: cannot read system DNS: %w", err)
+		return fmt.Errorf("%w: cannot read system DNS configuration", core.ErrSystemDNSUnavailable)
 	}
 	if !usesResolvedStub(string(resolvConf)) {
-		return errors.New("Linux: system DNS must use systemd-resolved stub 127.0.0.53 exclusively")
+		return fmt.Errorf("%w: systemd-resolved stub is not the sole resolver", core.ErrSystemDNSUnavailable)
 	}
 	var markBytes [4]byte
 	if _, err = rand.Read(markBytes[:]); err != nil {

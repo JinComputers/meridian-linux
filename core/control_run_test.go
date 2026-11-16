@@ -201,3 +201,21 @@ func TestEngineStartErrorSurvivesWrapping(t *testing.T) {
 		t.Fatalf("исходная ошибка движка потерялась: %v", err)
 	}
 }
+
+func TestSystemDNSFailureReachesControlProtocol(t *testing.T) {
+	store := &Store{Path: filepath.Join(t.TempDir(), "state.json")}
+	plat := newFakePlatform()
+	plat.snapshotErr = fmt.Errorf("private detail: %w", ErrSystemDNSUnavailable)
+	sent := &fakeControlSend{}
+	err := RunControlConnect(context.Background(), store, plat, NewStubEngine(), nil, ConnectOptions{KeyMaterial: "synthetic-key", Gateway: "192.0.2.1"}, sent.send)
+	if err == nil || len(sent.sent) != 1 || sent.sent[0].typ != ControlError {
+		t.Fatalf("expected control failure: %v %+v", err, sent.sent)
+	}
+	got := sent.sent[0].payload.(ControlErrorPayload)
+	if got.Failure != FailureSystemDNSUnavailable {
+		t.Fatalf("missing DNS classification: %+v", got)
+	}
+	if st, loadErr := store.Load(); loadErr != nil || st != nil {
+		t.Fatalf("snapshot error must not persist network state: %v", loadErr)
+	}
+}

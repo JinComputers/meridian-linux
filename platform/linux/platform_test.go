@@ -22,6 +22,9 @@ func (f *fakeRunner) Run(_ context.Context, n string, a ...string) (string, erro
 	if f.fail != "" && strings.Contains(s, f.fail) {
 		return "", errors.New("injected")
 	}
+	if strings.Contains(s, "route show default") {
+		return `[{"dev":"eth0","gateway":"192.0.2.1"}]`, nil
+	}
 	if strings.Contains(s, "link show") {
 		return f.links, nil
 	}
@@ -96,5 +99,13 @@ func TestResolvedStubOnly(t *testing.T) {
 		if got := usesResolvedStub(tc.in); got != tc.ok {
 			t.Errorf("%q: %v", tc.in, got)
 		}
+	}
+}
+
+func TestSnapshotClassifiesUnavailableSystemDNS(t *testing.T) {
+	f := &fakeRunner{fail: "resolvectl status"}
+	err := NewPlatform(f).Snapshot(context.Background(), &core.State{})
+	if !errors.Is(err, core.ErrSystemDNSUnavailable) {
+		t.Fatalf("wrong failure classification: %v", err)
 	}
 }

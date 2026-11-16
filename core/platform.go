@@ -1,6 +1,13 @@
 package core
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrSystemDNSUnavailable identifies an unsupported or unavailable system DNS
+// configuration. It carries no underlying system data across the control API.
+var ErrSystemDNSUnavailable = errors.New("system DNS unavailable or unsupported")
 
 // Tun — то, что core просит у платформы поверх самого PacketFlow: знать
 // собственное имя устройства (utunN на macOS, LUID/имя адаптера на

@@ -8,7 +8,7 @@ Type=simple
 User=root
 Group=root
 EnvironmentFile=/etc/meridian/helper.env
-ExecStart=/usr/libexec/meridian/meridian-helper --uid=${MERIDIAN_UID}
+ExecStart=/usr/libexec/meridian/meridian-helper --uid=${MERIDIAN_UID} --enable-unverified-network
 RuntimeDirectory=meridian
 RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=yes

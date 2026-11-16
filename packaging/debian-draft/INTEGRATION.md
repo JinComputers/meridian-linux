@@ -1,3 +1,9 @@
+# Historical integration notes
+
+The preview build now enables network after explicit administrator setup; the
+release gating items below remain outstanding. Build from one clean commit as
+specified in BUILD-PREVIEW.md. This is not authorization for public release.
+
 # Debian integration — experimental
 
 The launcher runs the desktop application as the ordinary user. If the helper

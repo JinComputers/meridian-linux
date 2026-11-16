@@ -1,13 +1,16 @@
+# Meridian Linux: Debian preview
+
+Для сборки из одного зафиксированного commit см. [BUILD-PREVIEW.md](BUILD-PREVIEW.md). Это предварительная версия, не публичный релиз.
+
 # Meridian Linux: Debian packaging draft
 
-This is an unreleased packaging scaffold, not a distributable package. It expects
-separately built and verified binaries in `out/meridian-vpn` and
-`out/meridian-helper`; no application source or secret is included. The current
-Linux backend, frontend, installation lifecycle and network cleanup need further
-validation before any package can be distributed.
+This is an unreleased owner-preview packaging configuration. The build process
+compiles both binaries from the same committed source snapshot and records
+provenance in the package. The Linux backend, frontend, installation lifecycle
+and network cleanup still require further validation before public release.
 
-The package does not enable or start the helper on install or upgrade. The graphical launcher asks for administrator authorization on first launch, and successful setup enables and starts the helper; see INTEGRATION.md. The unit
-passes no `--enable-unverified-network` flag, so connecting remains disabled.
+The package does not enable or start the helper on install or upgrade. The graphical launcher asks for administrator authorization on first launch, and successful setup enables and starts the helper; see INTEGRATION.md. The preview unit passes `--enable-unverified-network` and permits connections
+only after the owner explicitly configures and starts the service.
 The helper takes a single non-root numeric UID in
 `/etc/meridian/helper.env`; the shipped value is empty and the file is a Debian
 configuration file. The authenticated launching user is enrolled on first setup; no account is created. Never put a

@@ -6,3 +6,5 @@ debian/scripts/meridian-vpn usr/bin/
 debian/config/helper.env etc/meridian/
 debian/assets/meridian-vpn.desktop usr/share/applications/
 debian/assets/meridian-vpn.svg usr/share/icons/hicolor/scalable/apps/
+out/build-info.txt usr/share/doc/meridian-vpn/
+debian/assets/README.preview usr/share/doc/meridian-vpn/

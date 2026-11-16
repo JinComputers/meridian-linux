@@ -2,12 +2,12 @@ Source: meridian-vpn
 Section: net
 Priority: optional
 Maintainer: JinComputers <45369574+JinComputers@users.noreply.github.com>
-Build-Depends: debhelper-compat (= 13)
+Build-Depends: debhelper-compat (= 13), gcc, pkg-config, libgtk-3-dev, libwebkit2gtk-4.1-dev
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 
 Package: meridian-vpn
-Architecture: any
+Architecture: amd64
 Depends: ${misc:Depends}, ${shlibs:Depends}, systemd, systemd-resolved, iproute2, nftables, libsecret-tools, pkexec, util-linux, zenity
-Description: Experimental Meridian VPN desktop client
- Debian packaging draft. This package is not a production release.
+Description: Meridian VPN Linux preview
+ Owner preview for Debian 12 amd64. This is not a production release.

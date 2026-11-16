@@ -183,6 +183,7 @@ func TestReconnectWaitsForPriorCleanup(t *testing.T) {
 func TestBroadcastFailureNeverExposesRawError(t *testing.T) {
 	for _, tc := range []struct{ input, expected string }{
 		{"resolve", "resolve"},
+		{core.FailureSystemDNSUnavailable, core.FailureSystemDNSUnavailable},
 		{"synthetic-private-value", ""},
 	} {
 		a, b := net.Pipe()

@@ -278,6 +278,9 @@ type ControlErrorPayload struct {
 // Типичная картина сети, где режут зарубежные адреса.
 const FailureAPIUnavailable = "api-unavailable"
 
+// FailureSystemDNSUnavailable indicates that the platform cannot safely configure DNS.
+const FailureSystemDNSUnavailable = "system-dns-unavailable"
+
 // Известные значения ControlErrorPayload.Code — не исчерпывающий
 // список (помощник может прислать другой Code, интерфейс не обязан
 // падать на незнакомом — показать Message как есть), но эти интерфейс
