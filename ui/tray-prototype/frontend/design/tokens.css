@@ -1,0 +1,233 @@
+/* Оформление Meridian для настольных клиентов.
+   Перенос с Android: Brand в app/src/main/java/org/meridianvpn/app/Planet.kt,
+   тема в MainActivity.kt (darkColorScheme). 1 dp Android = 1 CSS px, 1 sp = 1 CSS px.
+   Тема ОДНА, чёрная. Светлой на Android нет. */
+
+:root {
+  /* Цвета */
+  --m-space: #000000;         /* фон окна */
+  --m-sphere: #171C26;        /* разделители, подложка нижней панели (планета теперь всегда чёрная внутри) */
+  --m-edge: #6F98FF;          /* акцент: кнопки, ссылки, значки разделов, тревожная строка */
+  --m-meridian: #525D80;      /* шестерёнка настроек */
+  --m-edge-off: #3A4358;      /* контур планеты без связи */
+  --m-meridian-off: #272D3A;  /* меридианы без связи */
+  --m-text: #D7DCE8;          /* основной текст (не чисто белый) */
+  --m-dim: #7C859E;           /* второстепенный текст, значки назад/поделиться/удалить */
+  --m-on-accent: #000000;     /* текст на кнопке с заливкой --m-edge */
+
+  /* Цвета логотипа (значок приложения, НЕ экран) */
+  --m-logo-bg: #0A0C11;
+  --m-logo-sphere: #11141A;
+  --m-logo-edge: #5B8AFF;
+  --m-logo-meridian: #454E69;
+
+  /* Шрифт: на Android системный (Roboto). На компьютере — системный. */
+  --m-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Размеры текста (sp → px) */
+  --m-fs-title: 20px;         /* заголовок экрана: «Настройки», «Логи», «Обход белых списков» */
+  --m-fs-title-sub: 17px;     /* «Раздельное туннелирование», заголовок строки настроек */
+  --m-fs-body: 16px;          /* bodyLarge (Material) */
+  --m-fs-body-medium: 14px;   /* bodyMedium, строка доступа в настройках, раскрывашка */
+  --m-fs-notice: 13px;        /* строка состояния под планетой, подсказки */
+  --m-fs-small: 12px;         /* статус ссылки, строки лога, версия */
+  --m-fs-tiny: 11px;          /* ссылка в списке, имя пакета */
+
+  /* Размеры и отступы (dp → px) */
+  --m-planet: 220px;          /* планета */
+  --m-icon: 40px;             /* поле значка-кнопки */
+  --m-pad-screen: 16px;       /* поля экрана */
+  --m-gap-main: 12px;         /* между блоками главного экрана */
+  --m-gap-block: 8px;         /* внутри блока доступа, между кнопками */
+  --m-row-pad-v: 14px;        /* вертикальные поля строки настроек */
+  --m-radius-input: 10px;     /* поле поиска */
+  --m-radius-button: 20px;    /* Material3 Button — полностью скруглённая «таблетка» высотой 40 */
+  --m-button-h: 40px;
+}
+
+html, body {
+  margin: 0;
+  background: var(--m-space);
+  color: var(--m-text);
+  font-family: var(--m-font);
+  font-size: var(--m-fs-body);
+}
+
+/* Кнопка с заливкой (Material3 Button в теме приложения) */
+.m-button {
+  height: var(--m-button-h);
+  border: 0;
+  border-radius: var(--m-radius-button);
+  background: var(--m-edge);
+  color: var(--m-on-accent);
+  font: 500 14px/1 var(--m-font);
+  letter-spacing: 0.1px;
+  padding: 0 24px;
+  cursor: pointer;
+}
+.m-button:disabled { opacity: 0.38; cursor: default; }
+
+/* Текстовая кнопка (TextButton): без заливки, акцентный текст */
+.m-text-button {
+  height: var(--m-button-h);
+  border: 0;
+  border-radius: var(--m-radius-button);
+  background: transparent;
+  color: var(--m-edge);
+  font: 500 14px/1 var(--m-font);
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+/* Поле ввода (OutlinedTextField): контур --m-dim, в фокусе --m-edge */
+.m-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 56px;
+  border: 1px solid var(--m-dim);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--m-text);
+  font: 16px var(--m-font);
+  padding: 0 16px;
+}
+.m-input:focus { outline: none; border: 2px solid var(--m-edge); padding: 0 15px; }
+
+/* Строка состояния под планетой (Notice) */
+.m-notice { font-size: var(--m-fs-notice); text-align: center; color: var(--m-dim); }
+.m-notice.bad { color: var(--m-edge); }
+
+/* Строка раздела в настройках */
+.m-entry {
+  display: flex; align-items: center; gap: 12px;
+  padding: var(--m-row-pad-v) 0;
+  border-bottom: 1px solid var(--m-sphere);
+  cursor: pointer;
+}
+.m-entry .title { font-size: var(--m-fs-title-sub); color: var(--m-text); }
+.m-entry .hint { font-size: var(--m-fs-notice); color: var(--m-dim); }
+
+/* ===================================================================
+   СТЕКЛО — решение владельца 30.09: как Android 0.1.209,
+   Glass.kt (d6bc9d6 в meridian-android-src), эталон — веб-панель роутера
+   (дизайн H). Числа — из Glass.kt, 1 dp = 1 px.
+   Рамка-градиент рисуется ::before с маской (рамка поверх полупрозрачной
+   заливки: обычный border градиентом не бывает, а приём с border-box
+   просвечивал бы сквозь полупрозрачную заливку).
+   =================================================================== */
+:root {
+  --g-bg: linear-gradient(#0A0D1C, #05060A);
+  --g-glow-blue: radial-gradient(circle 540px at 0 0, rgba(46,75,216,.10), transparent 100%);
+  --g-glow-violet: radial-gradient(circle 460px at 100% 62%, rgba(90,46,156,.086), transparent 100%);
+
+  --g-fill: linear-gradient(rgba(255,255,255,.188) 0%, rgba(255,255,255,.09) 18%, rgba(255,255,255,.039) 100%);
+  --g-border: linear-gradient(rgba(255,255,255,.40) 0%, rgba(255,255,255,.14) 50%, rgba(255,255,255,.059) 100%);
+  --g-card-fill: linear-gradient(rgba(255,255,255,.078) 0%, rgba(255,255,255,.031) 25%, rgba(255,255,255,.012) 100%);
+  --g-card-border: linear-gradient(rgba(255,255,255,.25) 0%, rgba(255,255,255,.078) 60%, rgba(255,255,255,.039) 100%);
+  --g-accent-fill: linear-gradient(#2A4C82 0%, #1B355E 20%, #0E1E3A 100%);
+  --g-accent-border: linear-gradient(rgba(91,143,232,.8) 0%, rgba(63,114,204,.4) 60%, rgba(63,114,204,.2) 100%);
+  --g-accent-text: #A9CBFF;
+  --g-on-fill: linear-gradient(#4FB477 0%, #2F8F57 25%, #1C6B3F 100%);
+  --g-knob-off: #8A92A8;
+  --g-icon: #D7DCE8;
+  --g-radius-card: 26px;
+  --g-pill-h: 48px;
+  /* Нажатие: 0.96 и возврат с отскоком — CSS-приближение пружины
+     Compose (затухание 0.6, жёсткость 700). */
+  --g-press: transform .28s cubic-bezier(.34, 1.56, .64, 1);
+}
+
+html, body {
+  background: var(--g-glow-violet), var(--g-glow-blue), var(--g-bg);
+  background-color: #05060A;
+}
+
+/* Общая рамка-градиент. */
+.m-button, .m-text-button, .icon-button, .g-card, .segmented, .seg-btn.active, .switch span, .upd {
+  position: relative;
+}
+.m-button::before, .m-text-button::before, .icon-button::before, .g-card::before,
+.segmented::before, .seg-btn.active::before, .switch span::after, .upd::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+  background: var(--g-border); pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+
+/* Кнопка-таблетка (GlassButton). */
+.m-text-button {
+  height: var(--g-pill-h); border-radius: 999px; border: 0;
+  background: var(--g-fill); color: #FFFFFF;
+  font: 600 15px/1 var(--m-font); padding: 0 18px;
+  transition: var(--g-press);
+}
+/* Акцентная (GlassAccentButton) — главное действие экрана. */
+.m-button, .m-text-button.accent {
+  height: var(--g-pill-h); border-radius: 999px; border: 0;
+  background: var(--g-accent-fill); color: var(--g-accent-text);
+  font: 600 15px/1 var(--m-font); padding: 0 18px;
+  transition: var(--g-press);
+}
+.m-button::before, .m-text-button.accent::before { background: var(--g-accent-border); }
+.m-button:disabled, .m-text-button:disabled { color: var(--m-dim); opacity: .6; cursor: default; }
+
+/* Круглая кнопка-значок (glassCircle): 48, значок светлый. */
+.icon-button {
+  width: 48px; height: 48px; border-radius: 50%; border: 0; padding: 0;
+  background: var(--g-fill); display: inline-flex; align-items: center; justify-content: center;
+  transition: var(--g-press); flex: none;
+}
+.icon-button img { width: 32px; height: 32px; display: block; }
+/* Крестик удаления: 32, мелкий толстый белый ×. */
+.icon-button.del { width: 32px; height: 32px; color: #FFFFFF; font: 700 15px/1 var(--m-font); }
+
+/* Нажатие — у всех стеклянных элементов, масштаб целиком (с фоном и рамкой). */
+.m-button:active:not(:disabled), .m-text-button:active:not(:disabled), .icon-button:active,
+.seg-btn:active:not(:disabled), .switch:active span, .m-entry[data-go]:active, summary.m-entry:active {
+  transform: scale(.96);
+}
+.m-entry[data-go], summary.m-entry { transition: var(--g-press); }
+
+/* Карточка (glassCard). */
+.g-card { border-radius: var(--g-radius-card); background: var(--g-card-fill); }
+.g-card::before { background: var(--g-card-border); }
+.g-card > .m-entry { padding-left: 16px; padding-right: 16px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.g-card > .m-entry:last-child { border-bottom: 0; }
+
+/* Сегменты (GlassSegmented): 44, подложка чёрный 10%, рамка как у карточки,
+   отступ 3; выбранный — таблетка как кнопка. */
+.segmented { display: flex; height: 44px; box-sizing: border-box; padding: 3px; border: 0;
+  border-radius: 999px; background: rgba(0,0,0,.10); overflow: visible; }
+.segmented::before { background: var(--g-card-border); }
+.seg-btn { flex: 1; height: 100%; border: 0; border-radius: 999px; background: transparent;
+  color: var(--m-dim); font: 400 15px/1 var(--m-font); cursor: pointer; transition: var(--g-press); }
+.seg-btn.active { background: var(--g-fill); color: #FFFFFF; font-weight: 600; }
+.seg-btn:disabled { cursor: default; opacity: .5; }
+
+/* Переключатель (GlassSwitch): 50×30, шарик 26, переезд с отскоком. */
+.switch { position: relative; width: 50px; height: 30px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; border: 0; background: var(--g-fill);
+  cursor: pointer; transition: var(--g-press); }
+.switch span::before { content: ""; position: absolute; width: 26px; height: 26px; left: 2px; top: 2px;
+  border-radius: 50%; background: var(--g-knob-off);
+  transition: transform .35s cubic-bezier(.34, 1.45, .64, 1), background-color .2s; }
+.switch input:checked + span { background: var(--g-on-fill); }
+.switch input:checked + span::before { transform: translateX(20px); background: #FFFFFF; }
+.switch input:disabled + span { opacity: .38; cursor: default; }
+
+/* Поле ввода: таблетка, заливка чёрный 20%, рамка как у карточки. Рамка —
+   border-box градиентом под непрозрачной подложкой цвета фона: у input
+   нет ::before. */
+.m-input {
+  height: 48px; border: 1px solid transparent; border-radius: 999px; padding: 0 18px;
+  background: linear-gradient(rgba(0,0,0,.2), rgba(0,0,0,.2)) padding-box,
+              linear-gradient(#080A14, #080A14) padding-box,
+              var(--g-card-border) border-box;
+  color: #FFFFFF; font: 15px var(--m-font);
+}
+.m-input:focus { outline: none; border: 1px solid transparent; padding: 0 18px;
+  background: linear-gradient(rgba(0,0,0,.2), rgba(0,0,0,.2)) padding-box,
+              linear-gradient(#080A14, #080A14) padding-box,
+              var(--g-accent-border) border-box; }
+.m-input::placeholder { color: var(--m-dim); }

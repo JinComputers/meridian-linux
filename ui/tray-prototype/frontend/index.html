@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Meridian VPN</title>
+<!-- Оформление — docs/desktop-design.md (meridian-android-src,
+     0516206): design/tokens.css, design/planet.js, design/icons — копии
+     оттуда без правок. Расходится с Android — прав Android. -->
+<link rel="stylesheet" href="design/tokens.css">
+<style>
+  /* color-scheme: dark — у WebView2/Edge полоса прокрутки по умолчанию
+     «fluent»/оверлейная и следует ЭТОМУ свойству, не -webkit-scrollbar-*
+     (та часть ниже — на случай классического рендера, не помешает).
+     Без него полоса оставалась светлой даже с --webkit-scrollbar правкой
+     (просьба владельца 29.09, скриншот). */
+  html, body { color-scheme: dark; width: 360px; height: 720px; overflow: hidden; user-select: none; -webkit-user-select: none; }
+  body { display: flex; flex-direction: column; }
+  #dragbar { height: 28px; flex: none; --wails-draggable: drag; display: flex; justify-content: flex-end; padding: 0 8px; }
+  #dragbar button { background: none; border: 0; color: var(--m-dim); font-size: 18px; cursor: pointer; padding: 2px 8px; }
+  #dragbar button:hover { color: var(--m-text); }
+
+  .screen { flex: 1; box-sizing: border-box; padding: 0 var(--m-pad-screen) var(--m-pad-screen);
+            display: flex; flex-direction: column; gap: var(--m-gap-main); overflow-y: auto; }
+  /* Длинный экран прокручивается, а не сжимает строки: без этого flex
+     сплющивал переключатель VK/DION и кнопки на экране DION. */
+  .screen > * { flex-shrink: 0; }
+  /* Полоса прокрутки — под тёмное оформление (по умолчанию у WebView2
+     светлая, выбивалась на тёмном фоне, просьба владельца 28.09). */
+  .screen, .logbox, textarea.m-input { scrollbar-width: thin; scrollbar-color: var(--m-meridian) transparent; }
+  .screen::-webkit-scrollbar, .logbox::-webkit-scrollbar, textarea.m-input::-webkit-scrollbar { width: 8px; }
+  .screen::-webkit-scrollbar-track, .logbox::-webkit-scrollbar-track, textarea.m-input::-webkit-scrollbar-track { background: transparent; }
+  .screen::-webkit-scrollbar-thumb, .logbox::-webkit-scrollbar-thumb, textarea.m-input::-webkit-scrollbar-thumb {
+    background: var(--m-meridian); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+  .screen::-webkit-scrollbar-thumb:hover, .logbox::-webkit-scrollbar-thumb:hover, textarea.m-input::-webkit-scrollbar-thumb:hover { background: var(--m-dim); }
+  .hidden { display: none !important; }
+  .grow { flex: 1; }
+  .center { display: flex; justify-content: center; }
+  .access { display: flex; flex-direction: column; gap: var(--m-gap-block); }
+  .icon-button { cursor: pointer; }
+  /* Шестерёнка при нажатии чуть поворачивается (просьба владельца 21.10). */
+  #gear img { transition: none; }
+  #gear.spin img { animation: gear-spin .35s cubic-bezier(.3, .7, .3, 1); }
+  @keyframes gear-spin { from { transform: rotate(0); } to { transform: rotate(120deg); } }
+  /* prefers-reduced-motion НЕ учитываем: у владельца в Windows анимации выключены
+     (ClientAreaAnimation=0), и WebView2 тогда гасил бы вращение, которое он просил. */
+  .note { font-size: var(--m-fs-notice); color: var(--m-dim); text-align: center; min-height: 16px; }
+  .note.bad { color: var(--m-edge); }
+  label.field { font-size: 12px; color: var(--m-dim); display: block; margin-bottom: 4px; }
+  .row-buttons { display: flex; gap: var(--m-gap-block); justify-content: center; }
+
+  /* Обход блокировок — выпадающий блок (details/summary): стрелка родная
+     браузера, свернут по умолчанию. */
+  #apps-list:empty, #apps-pick-list:empty { display: none; }
+  .app-row { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .app-row:last-child { border-bottom: 0; }
+  .app-row .texts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .app-row .title { font-size: var(--m-fs-body, 14px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app-row .path { font-size: 11px; color: var(--m-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app-row button { flex: none; }
+  .apps-group { font-size: 12px; color: var(--m-dim); padding: 8px 16px 4px; }
+  #antidpi-block summary { list-style: none; }
+  #antidpi-block summary::-webkit-details-marker { display: none; }
+  #antidpi-block summary::after { content: '›'; color: var(--m-dim); font-size: 20px;
+    transform: rotate(90deg); display: inline-block; transition: transform .15s; }
+  #antidpi-block[open] summary::after { transform: rotate(270deg); }
+  .antidpi-groups { display: flex; flex-direction: column; padding-left: 8px; }
+
+  /* Заголовок экрана: «назад» + название (20). */
+  .head { display: flex; align-items: center; gap: 14px; padding-top: 2px; }
+  .head h2 { font-size: var(--m-fs-title); font-weight: 600; margin: 0; color: #FFFFFF; }
+
+  /* Строки настроек — .m-entry из tokens.css. */
+  .m-entry img { width: var(--m-icon); height: var(--m-icon); flex: none; }
+  .m-entry .texts { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  /* Строка ключа и версия внизу настроек — маленькие кнопки (просьба владельца
+     21.10: чтобы было видно, что на них можно нажать). Цвет — состояние:
+     зелёный / жёлтый / красный / серый (tone-ok, tone-warn, tone-bad, tone-off). */
+  .small-buttons { display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 6px; }
+  .m-text-button.small { display: inline-flex; align-items: center; gap: 7px; height: 30px; max-width: 100%;
+    padding: 0 14px; font: 500 12px/1 var(--m-font); white-space: nowrap; }
+  .m-text-button.small::after { content: ""; order: -1; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+  .m-text-button.small:hover:not(:disabled) { filter: brightness(1.25); }
+  .sb-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  /* «Купить ключ» — красная, плотнее остальных: это призыв к действию. */
+  .m-text-button.small.tone-bad.buy { background: rgba(229,100,94,.26); color: #FF8A84; font-weight: 600; }
+  .m-text-button.small.tone-bad.buy::before { background: rgba(229,100,94,.85); }
+  .m-text-button.small.tone-off { color: var(--m-dim); }
+  .m-text-button.small.tone-ok { color: #4FB477; background: rgba(79,180,119,.12); }
+  .m-text-button.small.tone-ok::before { background: rgba(79,180,119,.6); }
+  .m-text-button.small.tone-warn { color: #E8B93F; background: rgba(232,185,63,.12); }
+  .m-text-button.small.tone-warn::before { background: rgba(232,185,63,.6); }
+  .m-text-button.small.tone-bad { color: #E5645E; background: rgba(229,100,94,.12); }
+  .m-text-button.small.tone-bad::before { background: rgba(229,100,94,.6); }
+
+  /* Обновление на главном экране: одна строка, закрывается до следующей
+     версии (как UpdateBanner на Android). */
+  .upd { display: flex; align-items: center; gap: 8px; border-radius: 22px; background: var(--g-card-fill);
+         padding: 8px 8px 8px 16px; font-size: var(--m-fs-notice); color: var(--m-text); }
+  .upd::before { background: var(--g-card-border); }
+  .upd .t { flex: 1; }
+  .upd .m-text-button { height: 36px; padding: 0 14px; font-size: 14px; }
+
+  /* Обход белых списков */
+  .howto { font-size: var(--m-fs-body-medium); color: var(--m-edge); cursor: pointer; }
+  .howto-steps { font-size: var(--m-fs-notice); color: var(--m-text); margin: 0; padding-left: 20px; line-height: 1.5; }
+  .howto-steps a { color: var(--m-edge); text-decoration: none; cursor: pointer; }
+  .blk { display: flex; flex-direction: column; gap: var(--m-gap-main); flex-shrink: 0; }
+  .divider { height: 1px; background: var(--m-sphere); flex: none; }
+  /* Транспорт VK/DION — .segmented/.seg-btn в design/tokens.css (стекло). */
+  .link-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .link-row:last-child { border-bottom: 0; }
+  #hash-list:empty, #dion-list:empty { display: none; }
+  .link-row .texts { flex: 1; min-width: 0; }
+  .link-row .url { font-size: var(--m-fs-tiny); color: var(--m-text); word-break: break-all; }
+  .link-row .status { font-size: var(--m-fs-small); color: var(--m-dim); }
+  .link-row .status.ok { color: var(--m-edge); }
+  .link-row .status.bad { color: var(--m-text); }
+  .logbox { flex: 1; min-height: 160px; margin: 0; overflow: auto; background: rgba(0,0,0,.2); color: var(--m-text);
+            border: 1px solid rgba(255,255,255,.1); border-radius: 18px; padding: 12px; font: 10px/1.35 Consolas, Menlo, monospace; white-space: pre-wrap; word-break: break-all;
+            user-select: text; -webkit-user-select: text; }
+  textarea.m-input { height: 150px; padding: 12px 16px; resize: none; font-size: 14px; border-radius: 18px; }
+  textarea.m-input:focus { padding: 12px 16px; }
+  .divider { background: rgba(255,255,255,.07); }
+  #antidpi-block { border-radius: var(--g-radius-card); }
+  #antidpi-block > summary.m-entry { border-bottom: 0; }
+  #antidpi-block[open] > summary.m-entry { border-bottom: 1px solid rgba(255,255,255,.06); }
+  .antidpi-groups { padding-left: 0; }
+  .antidpi-groups .m-entry { padding-left: 16px; padding-right: 16px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .antidpi-groups .m-entry:last-child { border-bottom: 0; }
+  #scr-main .access-row .m-text-button { min-width: 0; }
+  .upgrade { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .upgrade .t { font-size: var(--m-fs-body-medium); color: #FFFFFF; font-weight: 600; }
+  .upgrade .note { text-align: left; }
+</style>
+</head>
+<body>
+  <div id="dragbar"><button id="hide" title="Свернуть в строку меню">×</button></div>
+
+  <!-- Главный экран: планета, доступ, строка состояния, шестерёнка. -->
+  <section class="screen" id="scr-main">
+    <div class="grow"></div>
+    <div class="center"><canvas id="planet"></canvas></div>
+    <div class="access" id="access">
+      <div id="access-ask" class="center">
+        <button class="m-text-button" id="have-key">Уже есть ключ?</button>
+      </div>
+      <div id="access-form" class="hidden">
+        <label class="field" for="key-input">Ключ</label>
+        <input class="m-input" id="key-input" type="password" autocomplete="off" spellcheck="false">
+        <div class="row-buttons" style="margin-top:8px">
+          <button class="m-button" id="key-check">Проверить</button>
+          <button class="m-text-button" id="key-cancel">Отмена</button>
+        </div>
+        <div class="note bad" id="key-note"></div>
+        <div class="center" style="margin-top:14px">
+          <button class="m-button" id="trial-go">Начать 3 дня бесплатно</button>
+        </div>
+      </div>
+    </div>
+    <div class="m-notice" id="notice"></div>
+    <div class="center hidden" id="retry-connect-row"><button class="m-text-button" id="retry-connect">Повторить подключение</button></div>
+    <div class="center hidden" id="key-recover-row"><button class="m-text-button" id="key-recover">Ввести ключ заново</button></div>
+    <div class="note bad hidden" id="key-temporary-note">Ключ не удалось сохранить. Он действует до закрытия приложения. Проверьте, что Связка ключей разблокирована и доступ разрешён.</div>
+    <div class="grow"></div>
+    <div class="upd hidden" id="upd">
+      <div class="t" id="upd-text"></div>
+      <button class="m-text-button accent" id="upd-go">Обновить</button>
+      <button class="icon-button del" id="upd-x" title="Скрыть до следующей версии">×</button>
+    </div>
+    <div class="center"><button class="icon-button" id="gear" title="Настройки"><img src="design/icons/gear.svg" alt="Настройки"></button></div>
+  </section>
+
+  <!-- Настройки -->
+  <section class="screen hidden" id="scr-settings">
+    <div class="head"><button class="icon-button" data-back><img src="design/icons/back.svg" alt="Назад"></button><h2>Настройки</h2></div>
+    <div class="g-card">
+      <div class="m-entry" data-go="hashes" style="display:none">
+        <img src="design/icons/link.svg" alt="">
+        <div class="texts"><div class="title">Обход белых списков</div>
+          <div class="hint" id="hint-hashes">ссылки на звонки, через них работает запасной путь</div></div>
+      </div>
+      <div class="m-entry" data-go="direct" style="display:none">
+        <img src="design/icons/apps.svg" alt="">
+        <div class="texts"><div class="title">Режимы туннеля</div><div class="hint" id="hint-direct"></div></div>
+      </div>
+      <div class="m-entry" data-go="support" id="row-support">
+        <img src="design/icons/log.svg" alt="">
+        <div class="texts"><div class="title">Поддержка</div>
+          <div class="hint">помощь и журнал работы</div></div>
+      </div>
+      <div class="m-entry" id="row-autostart" style="cursor:default">
+        <img src="design/icons/log.svg" alt="" style="visibility:hidden">
+        <div class="texts"><div class="title">Запускать при входе</div>
+          <div class="hint">туннель поднимется сам после входа в систему</div></div>
+        <label class="switch"><input type="checkbox" id="autostart"><span></span></label>
+      </div>
+    </div>
+    <div class="grow"></div>
+    <!-- «Повысить до Премиума» — только на тарифе «Базовый» (решение владельца
+         16.10): ссылку на бота считает Go (upgrade:open), ключ сюда не идёт. -->
+    <div class="g-card upgrade hidden" id="upgrade">
+      <div class="t">Тариф «Базовый»</div>
+      <div class="note">Белый режим, комнаты DION и личная поддержка — на Премиуме.</div>
+      <button class="m-button" id="upgrade-go">Повысить до Премиума</button>
+    </div>
+    <!-- Ручная капча VK (решение владельца 18.10): служба просит человека,
+         по кнопке открывается окно с капчей (Go: captcha:solve). -->
+    <div class="g-card upgrade hidden" id="captcha-card">
+      <div class="t">VK просит проверку</div>
+      <div class="note">Проверка VK пока недоступна в версии для Linux.</div>
+      <button class="m-button" id="captcha-go" disabled>Пока недоступно</button>
+    </div>
+    <div class="g-card upgrade hidden" id="partner-usage"></div>
+    <div class="small-buttons">
+      <div class="sb-row">
+        <button type="button" class="m-text-button small tone-off" id="access-line" title="Сменить ключ"></button>
+        <!-- После пробного периода: ссылка на тарифы зеркала (просьба владельца 21.10). -->
+        <button type="button" class="m-text-button small tone-bad buy hidden" id="buy-key" title="Открыть тарифы в браузере">Купить ключ</button>
+      </div>
+      <button type="button" class="m-text-button small tone-off" id="version" title="Обновление пока недоступно" disabled></button>
+    </div>
+  </section>
+
+  <!-- Поддержка -->
+  <section class="screen hidden" id="scr-support">
+    <div class="head"><button class="icon-button" data-back><img src="design/icons/back.svg" alt="Назад"></button><h2>Поддержка</h2></div>
+    <div class="g-card upgrade">
+      <div class="t">Нужна помощь?</div>
+      <div class="note">Напишите нам удобным способом.</div>
+      <div class="row-buttons">
+        <button class="m-text-button" id="support-telegram">Telegram</button>
+        <button class="m-text-button" id="support-email">Почта</button>
+      </div>
+    </div>
+    <div class="g-card">
+      <div class="m-entry" data-go="logs" id="row-logs">
+        <img src="design/icons/log.svg" alt="">
+        <div class="texts"><div class="title">Журнал</div>
+          <div class="hint">просмотреть и передать обезличенный отчёт</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Логи -->
+  <section class="screen hidden" id="scr-logs">
+    <div class="head"><button class="icon-button" data-back><img src="design/icons/back.svg" alt="Назад"></button><h2>Журнал</h2></div>
+    <div class="note">Ключ, ссылки ВК, id устройства, внешние адреса, имена пользователя и компьютера скрыты.</div>
+    <pre class="logbox" id="log-text">…</pre>
+    <div class="row-buttons">
+      <button class="m-text-button" id="log-share">Поделиться</button>
+      <button class="m-text-button" id="log-copy">Скопировать</button>
+    </div>
+    <div class="note" id="log-note"></div>
+  </section>
+
+  <!-- Выбор программы для «Приложения в туннель» -->
+  <section class="screen hidden" id="scr-apps">
+    <div class="head"><button class="icon-button" data-back><img src="design/icons/back.svg" alt="Назад"></button><h2>Выбор программы</h2></div>
+    <input class="m-input" id="apps-search" type="text" placeholder="Поиск по названию" spellcheck="false">
+    <div class="note" id="apps-pick-note">загружаю…</div>
+    <div id="apps-pick-list" class="g-card"></div>
+  </section>
+
+  <!-- Обход белых списков -->
+  <section class="screen hidden" id="scr-hashes">
+    <div class="head"><button class="icon-button" data-back><img src="design/icons/back.svg" alt="Назад"></button><h2>Обход белых списков</h2></div>
+    <!-- Транспорт (VK/DION) — решение владельца 28.09 -->
+    <div class="m-entry" id="relay-title" style="cursor:default">
+      <div class="texts"><div class="title">Транспорт Обхода Белых Списков</div></div>
+    </div>
+    <div class="segmented" id="relay-segmented">
+      <button type="button" class="seg-btn" id="relay-vk" data-primary="vk">VK</button>
+      <button type="button" class="seg-btn" id="relay-dion" data-primary="dion">DION</button>
+    </div>
+    <div class="note" id="relay-note"></div>
+    <div class="blk" id="blk-vk">
+    <div>
+      <label class="field" for="hash-input">Ссылка на звонок</label>
+      <input class="m-input" id="hash-input" placeholder="https://vk.com/call/join/…" autocomplete="off" spellcheck="false">
+    </div>
+    <button class="m-button" id="hash-add" disabled>Добавить</button>
+    <div class="note bad" id="hash-note"></div>
+    <div class="howto" id="howto">▸ Как получить ссылки</div>
+    <ol class="howto-steps hidden" id="howto-steps">
+      <li><a id="open-vk">Открыть VK и перейти в сообщения</a> — на телефоне или на vk.com</li>
+      <li>Нажать на трубку, затем на трубку с плюсом</li>
+      <li>Выбрать «Создать звонок», начать звонок от любого имени</li>
+      <li>Нажать «Поделиться ссылкой» и скопировать ссылку звонка. Звонок можно закрыть</li>
+      <li>Вставить ссылку на звонок в поле выше</li>
+    </ol>
+    <div class="divider"></div>
+    <div class="row-buttons"><button class="m-text-button" id="hash-check">Проверить все</button></div>
+    <div class="note" id="hash-check-note"></div>
+    <div id="hash-list" class="g-card"></div>
+    </div>
+    <div class="divider" id="blk-div"></div>
+    <div class="blk" id="blk-dion">
+    <div class="m-entry" style="cursor:default">
+      <div class="texts"><div class="title" id="dion-title">Комнаты DION</div>
+        <div class="hint" id="dion-count"></div></div>
+    </div>
+    <div>
+      <input class="m-input" id="dion-input" placeholder="https://dion.vc/event/… или код комнаты" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="row-buttons"><button class="m-text-button accent" id="dion-go">Добавить и проверить</button></div>
+    <div class="howto" id="howto-dion">▸ Как получить ссылки</div>
+    <ol class="howto-steps hidden" id="howto-dion-steps">
+      <li>Нужна комната на dion.vc с включённым входом для гостей: без входа гостем она не подойдёт</li>
+      <li>Скопировать ссылку комнаты вида https://dion.vc/event/…</li>
+      <li>Вставить ссылку в поле выше — она появится в списке комнат DION</li>
+    </ol>
+    <div class="note bad" id="dion-note"></div>
+    <div class="note" id="dion-check-note"></div>
+    <div id="dion-list" class="g-card"></div>
+    </div>
+  </section>
+
+  <!-- Прямые домены / белый режим -->
+  <section class="screen hidden" id="scr-direct">
+    <div class="head"><button class="icon-button" data-back><img src="design/icons/back.svg" alt="Назад"></button><h2>Режимы туннеля</h2></div>
+    <div class="m-entry" style="cursor:default">
+      <div class="texts"><div class="title" id="mode-title">Чёрный режим</div>
+        <div class="hint" id="mode-hint"></div></div>
+      <!-- На тарифе «Базовый» белого режима нет — переключатель скрыт (16.10) -->
+      <label class="switch hidden" id="white-switch" title="Выключено — чёрный режим, включено — белый"><input type="checkbox" id="white"><span></span></label>
+    </div>
+    <div class="note" id="white-note"></div>
+    <!-- Обход DPI-блокировок — только в чёрном режиме (решение владельца
+         27.09): трафик мимо списка идёт напрямую
+         через провайдера, там его и режут по DPI; белый и так через
+         ВК-релей, провайдер его не видит. Без выбора техники обхода —
+         только группы сайтов, как в панели роутера. -->
+    <details id="antidpi-block" class="g-card">
+      <summary class="m-entry" style="cursor:pointer;padding-left:16px;padding-right:16px">
+        <div class="texts"><div class="title">Обход блокировок</div>
+          <div class="hint">YouTube, Discord и другое — без замедления провайдером</div></div>
+      </summary>
+      <div class="antidpi-groups">
+        <div class="m-entry" style="cursor:default">
+          <div class="texts"><div class="title">YouTube</div></div>
+          <label class="switch"><input type="checkbox" id="antidpi-youtube"><span></span></label>
+        </div>
+        <div class="m-entry" style="cursor:default">
+          <div class="texts"><div class="title">Discord</div></div>
+          <label class="switch"><input type="checkbox" id="antidpi-discord"><span></span></label>
+        </div>
+        <div class="m-entry" style="cursor:default">
+          <div class="texts"><div class="title">Соцсети</div>
+            <div class="hint">Facebook, Threads, Messenger</div></div>
+          <label class="switch"><input type="checkbox" id="antidpi-social"><span></span></label>
+        </div>
+        <div class="m-entry" style="cursor:default">
+          <div class="texts"><div class="title">Спидтесты и CDN</div>
+            <div class="hint">Speedtest, Cloudflare и другие сети доставки контента</div></div>
+          <label class="switch"><input type="checkbox" id="antidpi-cloudflare"><span></span></label>
+        </div>
+        <div class="m-entry" style="cursor:default">
+          <div class="texts"><div class="title">Остальное</div>
+            <div class="hint">kino.pub, Linktree</div></div>
+          <label class="switch"><input type="checkbox" id="antidpi-other"><span></span></label>
+        </div>
+      </div>
+    </details>
+    <!-- Приложения в туннель — только в чёрном режиме (решение владельца
+         27.10.2026): весь трафик выбранных программ идёт через Meridian,
+         остальное напрямую. Применяется со следующего подключения. -->
+    <div id="apps-block">
+      <div class="m-entry" style="cursor:default">
+        <div class="texts"><div class="title">Приложения в туннель</div>
+          <div class="hint">весь трафик выбранных программ — через Meridian, остальное напрямую</div></div>
+      </div>
+      <div id="apps-list" class="g-card"></div>
+      <div class="row-buttons">
+        <button class="m-text-button" id="apps-pick">Выбрать из установленных</button>
+        <button class="m-text-button" id="apps-exe">Указать .exe</button>
+      </div>
+      <div class="note" id="apps-note"></div>
+    </div>
+    <!-- Свой список прямых доменов — только в чёрном режиме (белый обходится
+         встроенным списком RU-адресов, решение владельца 27.09: свой список
+         клиентам не нужен, скрыт). -->
+    <div id="direct-list-block">
+      <div>
+        <label class="field" for="direct-input" id="list-label"></label>
+        <textarea class="m-input" id="direct-input" spellcheck="false"></textarea>
+      </div>
+      <div class="row-buttons">
+        <button class="m-text-button" id="list-import">Импорт из .txt</button>
+        <button class="m-text-button" id="list-export">Экспорт в .txt</button>
+      </div>
+      <div class="note" id="direct-note"></div>
+    </div>
+  </section>
+
+<script src="design/planet.js"></script>
+<script type="module">
+  import * as wails from "/wails/runtime.js";
+  const $ = (id) => document.getElementById(id);
+
+  // --- экраны: «назад» возвращает туда, откуда пришли (как на Android) ---
+  const stack = ['main'];
+  function show(name) {
+    for (const s of document.querySelectorAll('.screen')) s.classList.add('hidden');
+    $('scr-' + name).classList.remove('hidden');
+  }
+  function go(name) { stack.push(name); show(name); }
+  function back() { if (stack.length > 1) stack.pop(); show(stack[stack.length - 1]); }
+  for (const b of document.querySelectorAll('[data-back]')) b.addEventListener('click', back);
+  for (const r of document.querySelectorAll('[data-go]')) r.addEventListener('click', () => go(r.dataset.go));
+  // Сначала шестерёнка успевает повернуться, потом открываются настройки.
+  let gearBusy = false;
+  $('gear').addEventListener('click', () => {
+    if (gearBusy) return;
+    gearBusy = true;
+    $('gear').classList.add('spin');
+    setTimeout(() => { go('settings'); $('gear').classList.remove('spin'); gearBusy = false; }, 250);
+  });
+  $('hide').addEventListener('click', () => wails.Events.Emit('tray:hide-window'));
+
+  // --- планета — она же кнопка ---
+  const planet = new MeridianPlanet($('planet'), 220);
+  let S = { state: 'disconnected', has_key: false };
+  $('planet').addEventListener('click', (ev) => {
+    if (!planet.enabled || !planet.hit(ev)) return;
+    wails.Events.Emit('tray:toggle');
+  });
+
+  $('retry-connect').addEventListener('click', () => wails.Events.Emit('tray:toggle'));
+
+  // --- ключ: «Уже есть ключ?» → поле «Ключ» → «Проверить» / «Отмена» ---
+  let keyFormOpen = false;
+  function keyForm(open) {
+    keyFormOpen = open;
+    $('access-ask').classList.toggle('hidden', open);
+    $('access-form').classList.toggle('hidden', !open);
+    $('key-note').textContent = '';
+    $('key-input').value = '';
+    if (open) { $('key-input').focus(); }
+    render(S);
+  }
+  $('have-key').addEventListener('click', () => keyForm(true));
+  $('key-cancel').addEventListener('click', () => { wails.Events.Emit('keylink:cancel'); wails.Events.Emit('key:recover-cancel'); keyForm(false); });
+  $('key-recover').addEventListener('click', () => { wails.Events.Emit('key:recover'); keyForm(true); $('key-note').textContent = 'Ключ будет проверен и сохранён в Связке ключей.'; });
+  // Ключ из ссылки meridian://key/…: подставляем, применяется только по «Проверить».
+  wails.Events.On('key-link', (ev) => {
+    const d = ev.data || {};
+    if (!d.key) return;
+    stack.length = 1; show('main'); keyForm(true);
+    $('key-input').value = d.key;
+    $('key-note').textContent = 'Ключ из ссылки (' + (d.masked || '') + '). Нажмите «Проверить», чтобы применить.';
+  });
+  wails.Events.Emit('keylink:get');
+  $('key-check').addEventListener('click', () => {
+    const key = $('key-input').value.trim();
+    if (key.length < 8) { $('key-note').textContent = 'ключ слишком короткий'; return; }
+    $('key-check').textContent = 'Проверяю…';
+    $('key-check').disabled = true;
+    wails.Events.Emit('key:check', key);
+  });
+  $('key-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('key-check').click(); });
+  $('trial-go').addEventListener('click', () => {
+    $('trial-go').textContent = 'Запрашиваю…';
+    $('trial-go').disabled = true;
+    $('key-note').textContent = '';
+    wails.Events.Emit('trial:start');
+  });
+  wails.Events.On('trial-result', (ev) => {
+    const d = ev.data || {};
+    $('trial-go').textContent = 'Начать 3 дня бесплатно';
+    $('trial-go').disabled = false;
+    if (d.error) $('key-note').textContent = d.error;
+  });
+  wails.Events.On('key-result', (ev) => {
+    const d = ev.data || {};
+    $('key-check').textContent = 'Проверить';
+    $('key-check').disabled = false;
+    if (d.ok) { keyForm(false); } else { $('key-note').textContent = d.error || ''; }
+  });
+  $('upgrade-go').addEventListener('click', () => wails.Events.Emit('upgrade:open'));
+  $('captcha-go').addEventListener('click', () => wails.Events.Emit('captcha:solve'));
+  $('access-line').addEventListener('click',() => { stack.length = 1; show('main'); keyForm(true); });
+  $('buy-key').addEventListener('click', () => wails.Events.Emit('open-url', 'https://storage.googleapis.com/meridianvpn-mirror/index.html#pricing'));
+
+  // --- обход белых списков ---
+  $('hash-input').addEventListener('input', () => { $('hash-add').disabled = !$('hash-input').value.trim(); $('hash-note').textContent = ''; });
+  $('hash-add').addEventListener('click', () => wails.Events.Emit('vk:add', $('hash-input').value.trim()));
+  $('hash-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !$('hash-add').disabled) $('hash-add').click(); });
+  wails.Events.On('vk-result', (ev) => {
+    const d = ev.data || {};
+    if (d.ok) { $('hash-input').value = ''; $('hash-add').disabled = true; $('hash-note').textContent = ''; }
+    else $('hash-note').textContent = d.error || '';
+  });
+  $('howto').addEventListener('click', () => {
+    const open = $('howto-steps').classList.toggle('hidden') === false;
+    $('howto').textContent = (open ? '▾' : '▸') + ' Как получить ссылки';
+  });
+  $('howto-dion').addEventListener('click', () => {
+    const open = $('howto-dion-steps').classList.toggle('hidden') === false;
+    $('howto-dion').textContent = (open ? '▾' : '▸') + ' Как получить ссылки';
+  });
+  $('open-vk').addEventListener('click', () => wails.Events.Emit('open-url', 'https://vk.ru/im'));
+
+  // --- комнаты DION (запасной релей) ---
+  $('dion-input').addEventListener('input', () => { $('dion-note').textContent = ''; });
+  $('dion-go').addEventListener('click', () => {
+    $('dion-note').textContent = '';
+    wails.Events.Emit('dion:go', $('dion-input').value.trim());
+    $('dion-input').value = '';
+  });
+  $('dion-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('dion-go').click(); });
+  wails.Events.On('dion-result', (ev) => {
+    const d = ev.data || {};
+    $('dion-note').textContent = d.ok ? '' : (d.error || '');
+  });
+  function setRelayPrimary(p) {
+    if (p === 'dion') {
+      if (!(S.dion_rooms || []).length) { $('relay-note').textContent = 'Сначала добавьте комнату DION'; return; }
+      if (S.dion_all_dead) { $('relay-note').textContent = 'Все сохранённые комнаты DION мёртвые. Основным DION делать нельзя, добавьте живую комнату.'; return; }
+    }
+    $('relay-note').textContent = '';
+    wails.Events.Emit('dion:set-primary', p);
+  }
+  $('relay-vk').addEventListener('click', () => setRelayPrimary('vk'));
+  $('relay-dion').addEventListener('click', () => setRelayPrimary('dion'));
+
+  // --- прямые домены / белый режим: пишется сразу, без «Сохранить» ---
+  $('white').addEventListener('change', () => { listMsg = ''; wails.Events.Emit('tray:set-white-mode', $('white').checked); });
+  let listMsg = '';
+
+  // --- приложения в туннель (apps.go) ---
+  let appsPick = { installed: [], running: [] };
+  let appsMsg = '';
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  $('apps-pick').addEventListener('click', () => { $('apps-search').value = ''; $('apps-pick-note').textContent = 'загружаю…'; $('apps-pick-list').innerHTML = ''; go('apps'); wails.Events.Emit('apps:list'); });
+  $('apps-exe').addEventListener('click', () => { appsMsg = ''; wails.Events.Emit('apps:browse'); });
+  $('apps-search').addEventListener('input', renderPick);
+  wails.Events.On('apps-result', (ev) => { appsPick = ev.data || { installed: [], running: [] }; renderPick(); });
+  wails.Events.On('apps-note', (ev) => { const d = ev.data || {}; appsMsg = d.message || ''; $('apps-note').textContent = appsMsg; $('apps-note').className = 'note' + (d.ok ? '' : ' bad'); });
+  function appRow(a, label, act) {
+    return '<div class="app-row"><div class="texts"><div class="title">' + esc(a.name) + '</div><div class="path">' + esc(a.path) + '</div></div>' +
+      '<button class="m-text-button" data-act="' + act + '" data-path="' + esc(a.path) + '" data-name="' + esc(a.name) + '">' + label + '</button></div>';
+  }
+  function renderPick() {
+    const q = $('apps-search').value.trim().toLowerCase();
+    const have = new Set((S.tunnel_apps || []).map((a) => a.path.toLowerCase()));
+    const f = (l) => l.filter((a) => !have.has(a.path.toLowerCase()) && (!q || a.name.toLowerCase().includes(q) || a.path.toLowerCase().includes(q)));
+    const run = f(appsPick.running || []), inst = f(appsPick.installed || []);
+    let h = '';
+    if (run.length) h += '<div class="apps-group">Сейчас запущены</div>' + run.map((a) => appRow(a, 'Добавить', 'add')).join('');
+    if (inst.length) h += '<div class="apps-group">Установленные</div>' + inst.map((a) => appRow(a, 'Добавить', 'add')).join('');
+    $('apps-pick-list').innerHTML = h;
+    $('apps-pick-note').textContent = h ? '' : (q ? 'ничего не найдено' : 'программ не нашлось — укажите .exe вручную');
+  }
+  $('apps-pick-list').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-act="add"]'); if (!b) return;
+    wails.Events.Emit('apps:add', { name: b.dataset.name, path: b.dataset.path });
+    b.closest('.app-row').remove();
+  });
+  $('apps-list').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-act="del"]'); if (!b) return;
+    wails.Events.Emit('apps:remove', b.dataset.path);
+  });
+  function renderApps(white) {
+    $('apps-block').classList.toggle('hidden', white || !S.apps_supported);
+    const list = S.tunnel_apps || [];
+    $('apps-list').innerHTML = list.map((a) => appRow(a, 'Убрать', 'del')).join('');
+    if (!appsMsg) $('apps-note').textContent = list.length ? 'выбрано: ' + list.length + ' · изменения — со следующего подключения' : '';
+  }
+  const curMode = () => (S.white_mode ? 'white' : 'black');
+  $('direct-input').addEventListener('change', () => wails.Events.Emit('list:set', { mode: curMode(), text: $('direct-input').value }));
+  $('list-import').addEventListener('click', () => { $('direct-note').textContent = ''; wails.Events.Emit('list:import', curMode()); });
+  $('list-export').addEventListener('click', () => { $('direct-note').textContent = ''; wails.Events.Emit('list:export', curMode()); });
+  wails.Events.On('list-result', (ev) => { const d = ev.data || {}; listMsg = d.message || ''; render(S); });
+  $('hash-check').addEventListener('click', () => wails.Events.Emit('vk:check'));
+
+  // --- обход DPI-блокировок (чёрный режим): группы сайтов, без выбора техники ---
+  for (const g of ['youtube', 'discord', 'social', 'cloudflare', 'other']) {
+    $('antidpi-' + g).addEventListener('change', (e) => wails.Events.Emit('antidpi:set', { group: g, on: e.target.checked }));
+  }
+
+  // --- логи (logs.go) ---
+  $('row-logs').addEventListener('click', () => { $('log-note').textContent = ''; $('log-text').textContent = 'собираю…'; wails.Events.Emit('logs:get'); });
+  wails.Events.On('logs-text', (ev) => { const el = $('log-text'); el.textContent = ev.data || ''; el.scrollTop = el.scrollHeight; });
+  $('log-share').addEventListener('click', () => wails.Events.Emit('logs:share'));
+  $('log-copy').addEventListener('click', () => wails.Events.Emit('logs:copy'));
+  $('support-telegram').addEventListener('click', () => wails.Events.Emit('open-url', 'https://t.me/jincomputers_bot'));
+  $('support-email').addEventListener('click', () => wails.Events.Emit('open-url', 'mailto:support@meridianvpn.org'));
+  wails.Events.On('logs-result', (ev) => { const d = ev.data || {}; $('log-note').textContent = d.message || ''; $('log-note').className = 'note' + (d.ok ? '' : ' bad'); });
+  $('autostart').addEventListener('change', () => wails.Events.Emit('autostart:set', $('autostart').checked));
+
+  // --- обновления (update.go) ---
+  $('version').addEventListener('click', () => wails.Events.Emit('update:check'));
+  $('upd-go').addEventListener('click', () => wails.Events.Emit('update:start'));
+  $('upd-x').addEventListener('click', () => wails.Events.Emit('update:dismiss'));
+  // Строка версии в настройках — как UpdateRow на Android.
+  function versionText(s) {
+    const me = s.version || '';
+    switch (s.update_stage) {
+      case 'checking': return 'Версия ' + me + ' · проверяю…';
+      case 'latest': return 'Версия ' + me + ' · установлена последняя';
+      case 'available': return me + ' → ' + s.update_version + ' · обновить';
+      case 'downloading': return 'качаю ' + s.update_version + ' · ' + (s.update_percent || 0) + '%';
+      case 'installing': return 'ставлю ' + s.update_version + '…';
+      case 'failed': return 'Версия ' + me + ' · ' + (s.update_problem || 'не вышло') + (s.update_version ? ' · повторить' : '');
+    }
+    return 'Версия ' + me;
+  }
+
+  // --- отрисовка по состоянию из Go (единственный источник) ---
+  const PLANET = { disconnected: 'off', error: 'off', connecting: 'busy', connected: 'connected' };
+  function render(s) {
+    S = s;
+    planet.setState(PLANET[s.state] || 'off');
+    planet.setEnabled(!!s.has_key);
+    // Релей — планета белая (решение владельца 26.09): по ФАКТУ пути,
+    // т.е. победившей ступени (winner "R"), а не по настройке — туннель
+    // может уйти на релей и без белого режима (speedGuard). Старая служба
+    // winner не шлёт — тогда запасной признак: white_mode текущей сессии
+    // (white_pending=false значит режим именно этой сессии, см. applyLocal).
+    const relay = s.winner ? s.winner === 'R' : (!!s.white_mode && !s.white_pending);
+    planet.setRelay(s.state === 'connected' && relay);
+    // Блок доступа — только когда ключа нет (или его меняют).
+    $('access').classList.toggle('hidden', !!s.has_key && !keyFormOpen);
+    // Пока открыта форма ввода/проверки ключа — старую строку об отказе
+    // ПРЕЖНЕГО подключения не показываем: человек занят вводом ключа, а не
+    // читает про случившийся раньше отказ (просьба владельца 25.09).
+    const n = $('notice');
+    n.textContent = keyFormOpen ? '' : (s.notice || '');
+    n.className = 'm-notice' + (s.notice_bad && !keyFormOpen ? ' bad' : '');
+    $('retry-connect-row').classList.toggle('hidden', s.state !== 'error' || !s.has_key || keyFormOpen);
+    $('key-recover-row').classList.toggle('hidden', !s.key_recovery || keyFormOpen);
+    $('key-temporary-note').classList.toggle('hidden', !s.key_temporary || keyFormOpen);
+
+    const bc = s.black_count || 0;
+    const ac = (s.tunnel_apps || []).length;
+    $('hint-direct').textContent = s.white_mode ? 'белый режим'
+      : (bc ? 'чёрный режим, в туннель: ' + bc + (ac ? ' · приложений: ' + ac : '')
+        : (ac ? 'чёрный режим, приложений в туннеле: ' + ac : 'чёрный режим: список пуст — в туннель идёт только DNS'));
+    $('hint-direct').style.color = (!s.white_mode && !bc && !ac) ? '#FF8A84' : '';
+    const white = !!s.white_mode;
+    $('mode-title').textContent = white ? 'Белый режим' : 'Чёрный режим';
+    $('mode-hint').textContent = white
+      ? 'в туннель идёт всё, кроме российских адресов — они напрямую'
+      : 'в туннель идут только домены и адреса ниже, остальное напрямую';
+    // Свой список прямых доменов — только в чёрном режиме (решение владельца
+    // 27.09: в белом хватает встроенного списка RU-адресов, свой не нужен).
+    $('direct-list-block').classList.toggle('hidden', white);
+    // Обход DPI-блокировок — тоже только в чёрном режиме (см. комментарий
+    // у блока в разметке).
+    $('antidpi-block').classList.toggle('hidden', white);
+    renderApps(white);
+    $('antidpi-youtube').checked = !!s.antidpi_youtube;
+    $('antidpi-discord').checked = !!s.antidpi_discord;
+    $('antidpi-social').checked = !!s.antidpi_social;
+    $('antidpi-cloudflare').checked = !!s.antidpi_cloudflare;
+    $('antidpi-other').checked = !!s.antidpi_other;
+    $('list-label').textContent = 'В туннель — по одному в строке (поддомены тоже)';
+    $('direct-input').placeholder = 'youtube.com' + String.fromCharCode(10) + 'googlevideo.com' + String.fromCharCode(10) + '91.108.4.0/22';
+    const nl = (s.vk_links || []).length;
+    $('hint-hashes').textContent = 'ссылки на звонки, через них работает запасной путь' + (nl ? ' · ' + nl : '');
+    $('white').checked = !!s.white_mode;
+    // «Базовый»: белого режима и DION нет — скрываем, не отдельная сборка;
+    // ключ премиума вернёт всё сам.
+    $('white-switch').classList.toggle('hidden', !!s.basic);
+    $('upgrade').classList.toggle('hidden', !(s.basic && s.has_key && !s.partner_managed));
+    $('partner-usage').classList.toggle('hidden', !s.partner_managed);
+    $('partner-usage').textContent = s.partner_usage || '';
+    $('captcha-card').classList.toggle('hidden', !s.captcha);
+    for (const id of ['relay-title', 'relay-segmented', 'relay-note', 'blk-div', 'blk-dion']) $(id).classList.toggle('hidden', !!s.basic);
+    $('white-note').textContent = s.basic ? 'Белый режим доступен на тарифе «Премиум»' : (s.white_pending ? 'Применится при следующем подключении' : '');
+    if (!white && (document.activeElement !== $('direct-input') || $('direct-input').dataset.mode !== 'black')) {
+      $('direct-input').value = s.black_domains || '';
+      $('direct-input').dataset.mode = 'black';
+    }
+    $('direct-note').textContent = listMsg ? listMsg : (bc ? 'записей: ' + bc : '');
+    $('direct-note').className = 'note';
+    $('autostart').checked = !!s.autostart;
+    $('autostart').disabled = !s.autostart_available;
+    $('row-autostart').title = s.autostart_available ? '' : 'Только в установленном приложении';
+    $('access-line').textContent = s.access_text || '';
+    $('access-line').classList.toggle('hidden', !s.has_key);
+    // Подписка: зелёная — идёт, жёлтая — кончается за неделю, красная —
+    // кончилась, серая — срок неизвестен (Go: accessTone).
+    $('access-line').classList.remove('tone-ok', 'tone-warn', 'tone-bad', 'tone-off');
+    $('access-line').classList.add('tone-' + (s.access_tone || 'off'));
+    // Пробный период (не продлённый): рядом кнопка «Купить ключ».
+    $('buy-key').classList.toggle('hidden', !(s.has_key && s.key_trial));
+    $('version').textContent = versionText(s);
+    // Зелёная — только «есть новее» и «повторить» неудавшееся обновление;
+    // обновления нет и «проверить не удалось» — серая (это не новость о версии).
+    const newer = s.update_stage === 'available' || (s.update_stage === 'failed' && !!s.update_version);
+    $('version').classList.toggle('tone-ok', newer);
+    $('version').classList.toggle('tone-off', !newer);
+    // Главный экран: предложение обновиться, ход загрузки, итог после перезапуска.
+    let ut = '', go = false, x = true;
+    if (s.update_banner) {
+      if (s.update_stage === 'downloading') { ut = 'Качаю ' + s.update_version + ' · ' + (s.update_percent || 0) + '%'; x = false; }
+      else if (s.update_stage === 'installing') { ut = 'Ставлю ' + s.update_version + ' — система спросит разрешение, затем Meridian откроется сам'; x = false; }
+      else { ut = 'Доступна версия ' + s.update_version; go = true; }
+    } else if (s.update_stage === 'failed' && s.update_version) {
+      ut = 'Обновление: ' + (s.update_problem || 'не вышло'); go = true;
+    } else if (s.update_after) {
+      ut = s.update_after;
+    }
+    $('upd').classList.toggle('hidden', !ut);
+    $('upd-text').textContent = ut;
+    $('upd-go').classList.toggle('hidden', !go);
+    $('upd-go').textContent = s.update_stage === 'failed' ? 'Повторить' : 'Обновить';
+    $('upd-x').classList.toggle('hidden', !x);
+
+    const list = $('hash-list');
+    list.innerHTML = '';
+    $('hash-check').disabled = !!s.vk_busy || !(s.vk_links || []).length;
+    $('hash-check').textContent = s.vk_busy ? 'Проверяю…' : 'Проверить все';
+    $('hash-check-note').textContent = s.vk_note || '';
+    (s.vk_links || []).forEach((url, i) => {
+      const row = document.createElement('div');
+      row.className = 'link-row';
+      row.innerHTML = '<div class="texts"><div class="url"></div><div class="status"></div></div>' +
+        '<button class="icon-button del" title="Удалить" aria-label="Удалить">×</button>';
+      row.querySelector('.url').textContent = url;
+      const st = (s.vk_status || [])[i] || 'не проверялась';
+      const se = row.querySelector('.status');
+      se.textContent = st;
+      se.classList.toggle('ok', st.startsWith('живой'));
+      se.classList.toggle('bad', st.startsWith('мёртвый'));
+      row.querySelector('button').addEventListener('click', () => wails.Events.Emit('vk:delete', i));
+      list.appendChild(row);
+    });
+
+    // --- комнаты DION (запасной релей) ---
+    const dionRooms = s.dion_rooms || [];
+    const dionPrimary = s.relay_primary === 'dion'; // после правила «нет комнат — VK» (core.EffectiveRelayPrimary)
+    $('relay-vk').classList.toggle('active', !dionPrimary);
+    $('relay-dion').classList.toggle('active', dionPrimary);
+    $('relay-dion').disabled = !dionRooms.length;
+    // DION основной — блок DION выше блока VK
+    const scr = $('scr-hashes');
+    if (dionPrimary) scr.insertBefore($('blk-dion'), $('blk-vk'));
+    else scr.insertBefore($('blk-vk'), $('blk-dion'));
+    scr.insertBefore($('blk-div'), dionPrimary ? $('blk-vk') : $('blk-dion'));
+    $('dion-count').textContent = dionRooms.length ? `(${dionRooms.length} из 3)` : 'комнат нет — DION выключен';
+    $('dion-go').disabled = !!s.dion_busy;
+    $('dion-go').textContent = s.dion_busy ? 'Проверяю…' : 'Добавить и проверить';
+    $('dion-check-note').textContent = s.dion_note || '';
+    const dlist = $('dion-list');
+    dlist.innerHTML = '';
+    dionRooms.forEach((url, i) => {
+      const row = document.createElement('div');
+      row.className = 'link-row';
+      row.innerHTML = '<div class="texts"><div class="url"></div><div class="status"></div></div>' +
+        '<button class="icon-button del" title="Удалить" aria-label="Удалить">×</button>';
+      row.querySelector('.url').textContent = url;
+      const st = (s.dion_status || [])[i] || 'не проверялась';
+      const se = row.querySelector('.status');
+      se.textContent = st;
+      se.classList.toggle('ok', st.startsWith('живая'));
+      se.classList.toggle('bad', st.startsWith('мёртвая'));
+      row.querySelector('button').addEventListener('click', () => {
+        if (confirm('Удалить комнату DION?')) wails.Events.Emit('dion:delete', i);
+      });
+      dlist.appendChild(row);
+    });
+  }
+  wails.Events.On('state', (ev) => render(ev.data || {}));
+  wails.Events.On('show-key-form', () => { stack.length = 1; show('main'); keyForm(true); });
+  wails.Events.On('show-settings', () => { stack.length = 1; go('settings'); });
+
+  render(S);
+  wails.Events.Emit('tray:request-config');
+</script>
+</body>
+</html>
