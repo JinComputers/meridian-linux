@@ -12,7 +12,7 @@ dir=/etc/meridian
 config=$dir/helper.env
 [ ! -L "$dir" ] && [ -d "$dir" ] || { echo 'Untrusted configuration directory.' >&2; exit 1; }
 [ "$(stat -c %u "$dir")" = 0 ] && [ "$(stat -c %a "$dir")" = 755 ] || exit 1
-[ ! -L "$config" ] && [ -f "$config" ] && [ "$(stat -c %u "$config")" = 0 ] || { echo 'Untrusted configuration file.' >&2; exit 1; }
+[ ! -L "$config" ] && [ -f "$config" ] && [ "$(stat -c %u "$config")" = 0 ] && [ "$(stat -c %a "$config")" = 600 ] && [ "$(stat -c %h "$config")" = 1 ] || { echo 'Untrusted configuration file.' >&2; exit 1; }
 runtime=/run/meridian
 mkdir -m 0755 "$runtime" 2>/dev/null || :
 [ ! -L "$runtime" ] && [ -d "$runtime" ] && [ "$(stat -c %u "$runtime")" = 0 ] && [ "$(stat -c %a "$runtime")" = 755 ] || exit 1

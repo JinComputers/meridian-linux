@@ -1,0 +1,18 @@
+#!/bin/sh
+# Called only after an explicit recovery warning and pkexec authorization.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+[ "$(id -u)" = 0 ] || exit 1
+uid=${PKEXEC_UID-}
+case "$uid" in ''|*[!0-9]*|0) exit 1;; esac
+dir=/etc/meridian
+[ ! -L "$dir" ] && [ -d "$dir" ] && [ "$(stat -c %u "$dir")" = 0 ] && [ "$(stat -c %a "$dir")" = 755 ] || exit 1
+config=$dir/helper.env
+[ ! -L "$config" ] && [ -f "$config" ] && [ "$(stat -c %u "$config")" = 0 ] && [ "$(stat -c %a "$config")" = 600 ] && [ "$(stat -c %h "$config")" = 1 ] || exit 1
+configured=$(awk 'BEGIN { n=0; bad=0 } /^#/ || /^[[:space:]]*$/ { next } /^MERIDIAN_UID=[0-9]+$/ { n++; sub(/^MERIDIAN_UID=/, ""); v=$0; next } { bad=1 } END { if (bad || n!=1) exit 1; print v }' "$config") || exit 1
+[ "$configured" = "$uid" ] || { echo 'Meridian is configured for another account.' >&2; exit 1; }
+# The helper takes its own lock and refuses live/unknown journal owners.
+/usr/libexec/meridian/meridian-helper --recover-network
+# Use the same pkexec authorization to start the explicitly configured service.
+exec /usr/libexec/meridian/meridian-setup

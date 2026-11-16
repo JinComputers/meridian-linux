@@ -1,6 +1,7 @@
 out/meridian-vpn usr/libexec/meridian/
 out/meridian-helper usr/libexec/meridian/
 debian/scripts/meridian-setup usr/libexec/meridian/
+debian/scripts/meridian-recover usr/libexec/meridian/
 debian/scripts/meridian-vpn usr/bin/
 debian/config/helper.env etc/meridian/
 debian/assets/meridian-vpn.desktop usr/share/applications/

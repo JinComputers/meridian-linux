@@ -3,20 +3,34 @@
 uid=$(id -u)
 socket=/run/meridian/control.sock
 if ! systemctl is-active --quiet meridian-helper.service || [ ! -S "$socket" ] || [ "$(stat -c %u "$socket" 2>/dev/null)" != "$uid" ]; then
-    if pkexec /usr/libexec/meridian/meridian-setup; then
-        # systemd Type=simple can report started before the socket exists.
-        i=0
-        while [ "$i" -lt 40 ]; do
-            if [ -S "$socket" ] && [ "$(stat -c %u "$socket" 2>/dev/null)" = "$uid" ]; then break; fi
-            if ! systemctl is-active --quiet meridian-helper.service; then break; fi
-            i=$((i + 1))
-            sleep 0.25
-        done
-        if [ ! -S "$socket" ] || [ "$(stat -c %u "$socket" 2>/dev/null)" != "$uid" ]; then
-            zenity --warning --title='Meridian VPN' --text='Системная служба не ответила после запуска. Проверьте её состояние и повторите попытку.' || :
+    setup=/usr/libexec/meridian/meridian-setup
+    proceed=yes
+    if [ -e /run/meridian/state.json ] || [ -L /run/meridian/state.json ]; then
+        if systemctl is-active --quiet meridian-helper.service; then
+            zenity --warning --title='Meridian VPN' --text='Служба уже работает, но недоступна этому пользователю. Обратитесь к администратору.' || :
+            proceed=no
+        elif zenity --question --title='Восстановить доступ к сети?' --text='После предыдущего сбоя защита Meridian могла оставить интернет заблокированным. Восстановление снимет эту защиту и вернёт обычный доступ к сети без VPN. Продолжить?' --ok-label='Восстановить' --cancel-label='Отмена'; then
+            setup=/usr/libexec/meridian/meridian-recover
+        else
+            proceed=no
         fi
-    else
-        zenity --warning --title='Meridian VPN' --text='Системная служба не запущена. Чтобы повторить настройку, закройте приложение и запустите его снова; затем подтвердите запрос администратора.' || :
+    fi
+    if [ "$proceed" = yes ]; then
+        if pkexec "$setup"; then
+            # systemd Type=simple can report started before the socket exists.
+            i=0
+            while [ "$i" -lt 40 ]; do
+                if [ -S "$socket" ] && [ "$(stat -c %u "$socket" 2>/dev/null)" = "$uid" ]; then break; fi
+                if ! systemctl is-active --quiet meridian-helper.service; then break; fi
+                i=$((i + 1))
+                sleep 0.25
+            done
+            if [ ! -S "$socket" ] || [ "$(stat -c %u "$socket" 2>/dev/null)" != "$uid" ]; then
+                zenity --warning --title='Meridian VPN' --text='Системная служба не ответила после запуска. Проверьте её состояние и повторите попытку.' || :
+            fi
+        else
+            zenity --warning --title='Meridian VPN' --text='Системная служба не запущена или восстановление не завершено. Проверьте состояние сети и повторите попытку.' || :
+        fi
     fi
 fi
 exec /usr/libexec/meridian/meridian-vpn "$@"

@@ -23,8 +23,7 @@ Debian `dh_installsystemd` supplies service lifecycle integration with
 and its generated maintainer scripts inspected and tested on a disposable Debian
 VM with systemd before use; the hook ordering and failures are not yet verified.
 Actual desktop launch, secret service, GUI dependencies and icon are not validated.
-The maintainer address is intentionally invalid and must be replaced before any
-release; no provenance, version, signature, architecture matrix or release method
+The maintainer address matches the GitHub author configured in the source repository; no provenance, version, signature, architecture matrix or release method
 has been chosen.
 
 Open architectural decisions: how a user authorizes/configures the helper UID;
@@ -60,3 +59,17 @@ blocked both scripts and kept the old version; after deleting only that test
 journal, upgrade succeeded, preserved the edited UID and mode 0600, and did not
 start or enable the unit. This did not test real systemd or real executables.
 See `INTEGRATION.md` for the proposed source, build, UID and validation approach.
+
+## Явное восстановление после сбоя
+
+Если служба остановлена и обнаружен журнал сети, запуск приложения предлагает
+восстановление. В окне указано, что восстановление снимет защитный фильтр и
+вернёт прямой доступ к сети без VPN; действие выполняется только после согласия
+и подтверждения администратора. При отказе приложение откроется без выполнения
+восстановления. При ошибке журнал сохраняется, и настройки сети следует проверить.
+
+Администратор также может запустить `sudo /usr/libexec/meridian/meridian-helper
+--recover-network`: команда снимает оставшуюся защиту при успешной проверке
+журнала и не возобновляет VPN. До её запуска убедитесь, что прямой доступ к сети
+без VPN допустим. Не удаляйте вручную журнал или правила firewall как способ
+обойти ошибку.

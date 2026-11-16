@@ -1,7 +1,7 @@
 Source: meridian-vpn
 Section: net
 Priority: optional
-Maintainer: Meridian VPN <packaging@invalid.example>
+Maintainer: JinComputers <45369574+JinComputers@users.noreply.github.com>
 Build-Depends: debhelper-compat (= 13)
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
