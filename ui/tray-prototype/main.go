@@ -862,6 +862,9 @@ const noNetworkText = "Нет интернета"
 // connectFailureText — failureText, но сначала проверка сети: сети нет —
 // так и пишем, какой бы код ни прислала служба.
 func connectFailureText(ep core.ControlErrorPayload) string {
+	if ep.Code == "cleanup_failed" {
+		return "Не удалось восстановить сеть. Обратитесь в поддержку; не удаляйте журнал Meridian."
+	}
 	if ep.Code != core.ControlErrAlreadyRunning && networkKind() == "нет" {
 		return noNetworkText
 	}
@@ -966,9 +969,11 @@ func (a *app) toggle() {
 	a.state.mu.Unlock()
 	switch kind {
 	case uiConnected, uiConnecting:
-		// Остановка нажатием — не отказ: ни строки, ни уведомления.
-		a.setNotice(uiDisconnected, "", false)
-		_ = a.hc.send(core.ControlDisconnect, nil)
+		// Do not claim the network is restored until the helper confirms it.
+		a.setNotice(uiConnecting, "Отключение…", false)
+		if err := a.hc.send(core.ControlDisconnect, nil); err != nil {
+			a.setNotice(uiError, "Служба Meridian не отвечает. Проверьте подключение и восстановление сети.", true)
+		}
 	default:
 		if !hasKey {
 			_, err := getSubscriberKey()

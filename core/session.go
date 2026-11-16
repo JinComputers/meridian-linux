@@ -497,10 +497,14 @@ func Connect(
 		return nil, fmt.Errorf("Connect: настройка сети: %w", err)
 	}
 	if err := commit(); err != nil {
-		// Подключение уже встало физически — журнал не обновился, но
-		// откатывать вслепую то, что реально работает, хуже, чем громко
-		// сообщить и оставить решение вызывающему (он видит ошибку).
-		return nil, fmt.Errorf("Connect: подключено, но журнал не обновился (%w) — свериться и снять руками при необходимости", err)
+		// No Session will be returned to the caller, so it cannot otherwise
+		// stop the live engine and clean up the already-applied network.
+		// Restore uses the in-memory journal and retains the on-disk record
+		// when restoration itself fails.
+		handle.Stop()
+		t.Close()
+		abort()
+		return nil, fmt.Errorf("Connect: журнал после настройки сети: %w", err)
 	}
 
 	sess := &Session{store: store, platform: platform, engine: handle, tun: t, st: st, Events: events, LadderInfo: ladderInfo, TunnelInfo: info, pm: pm, pmOutcome: pmOutcome, winner: winner, winnerTCP: winnerTCP, winnerHost: winnerHost, startedAt: time.Now()}
@@ -712,6 +716,9 @@ func KeepConnected(
 			if onEvent != nil {
 				onEvent(EngineEvent{Kind: "log", Reason: fmt.Sprintf("KeepConnected: Disconnect: %v", err)})
 			}
+			// A retained journal or network rule needs recovery before another
+			// attempt. Tell the caller rather than announcing a clean shutdown.
+			return fmt.Errorf("KeepConnected: восстановление сети: %w", err)
 		}
 
 		if !unexpected {

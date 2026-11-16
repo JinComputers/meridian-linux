@@ -390,3 +390,74 @@ func TestConnectPreservesJournalWhenAbortRestoreFails(t *testing.T) {
 		t.Fatal("retry overwrote unresolved journal")
 	}
 }
+
+func TestRunControlReportsCleanupFailureAndPreservesJournal(t *testing.T) {
+	store := &Store{Path: filepath.Join(t.TempDir(), "state.json")}
+	plat := newFakePlatform()
+	plat.restoreErr = fmt.Errorf("injected restore failure")
+	answer := &ParamsAnswer{RoutingScope: "ordinary", Nodes: []ParamsNode{{ID: "test", Host: "192.0.2.1", Port: 443, Transport: "tcp"}}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var connected, controlError, disconnected bool
+	err := RunControlConnect(ctx, store, plat, NewStubEngine(), fakeFetcher{ans: answer}, ConnectOptions{KeyMaterial: "synthetic-key", Gateway: "192.0.2.1", Ladder: LadderOptions{Mode: LadderModeDirectOnly}}, func(typ ControlMessageType, p any) error {
+		if typ == ControlState {
+			state := p.(ControlStatePayload)
+			if state.Connected {
+				connected = true
+				cancel()
+			} else {
+				disconnected = true
+			}
+		}
+		if typ == ControlError {
+			controlError = true
+		}
+		return nil
+	})
+	if err == nil || !connected || !controlError || disconnected {
+		t.Fatalf("expected cleanup error, got err=%v connected=%t error=%t disconnected=%t", err, connected, controlError, disconnected)
+	}
+	if state, loadErr := store.Load(); loadErr != nil || state == nil {
+		t.Fatalf("journal lost after cleanup failure: %v", loadErr)
+	}
+}
+
+type failFinalJournalPlatform struct {
+	*fakePlatform
+	store *Store
+}
+
+func (p *failFinalJournalPlatform) Apply(ctx context.Context, st *State, tun Tun, info TunnelInfo, commit func() error) error {
+	if err := p.fakePlatform.Apply(ctx, st, tun, info, commit); err != nil {
+		return err
+	}
+	return os.Mkdir(p.store.Path+".tmp", 0700)
+}
+func TestConnectFinalJournalFailureStopsSessionAndRestores(t *testing.T) {
+	for _, restoreFails := range []bool{false, true} {
+		t.Run(fmt.Sprintf("restore_failure_%t", restoreFails), func(t *testing.T) {
+			store := &Store{Path: filepath.Join(t.TempDir(), "state.json")}
+			fake := newFakePlatform()
+			if restoreFails {
+				fake.restoreErr = fmt.Errorf("injected restore failure")
+			}
+			plat := &failFinalJournalPlatform{fakePlatform: fake, store: store}
+			eng := NewStubEngine()
+			answer := &ParamsAnswer{RoutingScope: "ordinary", Nodes: []ParamsNode{{ID: "test", Host: "192.0.2.1", Port: 443, Transport: "tcp"}}}
+			session, err := Connect(context.Background(), store, plat, eng, fakeFetcher{ans: answer}, ConnectOptions{KeyMaterial: "synthetic-key", Gateway: "192.0.2.1", Ladder: LadderOptions{Mode: LadderModeDirectOnly}})
+			if err == nil || session != nil {
+				t.Fatal("expected journal failure")
+			}
+			if !fake.tun.closed || eng.started || len(fake.restoreCalls) != 1 {
+				t.Fatal("live session or network not cleaned")
+			}
+			st, e := store.Load()
+			if e != nil {
+				t.Fatal(e)
+			}
+			if (st != nil) != restoreFails {
+				t.Fatalf("journal retained=%t, want %t", st != nil, restoreFails)
+			}
+		})
+	}
+}

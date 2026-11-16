@@ -70,7 +70,14 @@ func (h *helper) broadcast(t core.ControlMessageType, p any) error {
 				failure = original.Failure
 			}
 		}
-		p = core.ControlErrorPayload{Code: core.ControlErrConnectFailed, Message: "Не удалось подключиться", Failure: failure}
+		code := core.ControlErrConnectFailed
+		if h.store != nil {
+			state, err := h.store.Load()
+			if err != nil || state != nil {
+				code = "cleanup_failed"
+			}
+		}
+		p = core.ControlErrorPayload{Code: code, Message: "Не удалось подключиться", Failure: failure}
 	}
 	for _, c := range cs {
 		_ = c.send(t, p)
