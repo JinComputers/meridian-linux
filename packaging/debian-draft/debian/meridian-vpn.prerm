@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+case "$1" in
+  remove|upgrade|failed-upgrade|deconfigure)
+    if [ -d /run/systemd/system ]; then
+      systemctl stop meridian-helper.service
+    fi
+    if [ -e /run/meridian/state.json ]; then
+      echo 'Meridian network journal remains; inspect and recover it before removing the package.' >&2
+      exit 1
+    fi
+    ;;
+esac
+#DEBHELPER#

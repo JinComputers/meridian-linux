@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Meridian VPN
+Comment=Experimental desktop client
+Exec=/usr/bin/meridian-vpn
+Terminal=false
+Categories=Network;

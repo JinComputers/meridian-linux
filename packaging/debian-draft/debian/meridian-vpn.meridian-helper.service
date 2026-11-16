@@ -1,0 +1,23 @@
+[Unit]
+Description=Meridian VPN experimental local helper
+After=network.target
+ConditionPathExists=/etc/meridian/helper.env
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=/etc/meridian/helper.env
+ExecStart=/usr/libexec/meridian/meridian-helper --uid=${MERIDIAN_UID}
+RuntimeDirectory=meridian
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/run/meridian
+TimeoutStopSec=infinity
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

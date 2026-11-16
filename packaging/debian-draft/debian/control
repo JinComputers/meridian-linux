@@ -1,0 +1,13 @@
+Source: meridian-vpn
+Section: net
+Priority: optional
+Maintainer: Meridian VPN <packaging@invalid.example>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: meridian-vpn
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}, systemd, systemd-resolved, iproute2, nftables, libsecret-tools
+Description: Experimental Meridian VPN desktop client
+ Debian packaging draft. This package is not a production release.
