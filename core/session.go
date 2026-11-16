@@ -264,6 +264,15 @@ func Connect(
 		appSplit = as
 	}
 
+	// Never overwrite a journal left behind by an unsuccessful cleanup.
+	// The caller must resolve it before a new connection can start.
+	previous, err := store.Load()
+	if err != nil {
+		return nil, fmt.Errorf("Connect: журнал: %w", err)
+	}
+	if previous != nil {
+		return nil, errors.New("Connect: обнаружен журнал предыдущего подключения; требуется восстановление")
+	}
 	st := &State{PID: os.Getpid(), StartedAt: time.Now()}
 	if err := platform.Snapshot(ctx, st); err != nil {
 		return nil, fmt.Errorf("Connect: снимок сети: %w", err)
@@ -292,8 +301,13 @@ func Connect(
 	// Restore на частичном журнале безопасен — каждый его шаг под своим
 	// флагом. Фоновый контекст — ctx мог быть уже отменён.
 	abort := func() {
-		_ = platform.Restore(context.Background(), st)
-		_ = store.Remove()
+		if err := platform.Restore(context.Background(), st); err != nil {
+			log.Printf("Connect: восстановление не завершено, журнал сохранён: %v", err)
+			return
+		}
+		if err := store.Remove(); err != nil {
+			log.Printf("Connect: журнал не удалён: %v", err)
+		}
 	}
 
 	answer, pool, err := fetchStartup(ctx, paramsClient, key, opts.DeviceID)

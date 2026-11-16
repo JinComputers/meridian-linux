@@ -365,3 +365,28 @@ func TestConnectDirectDomainsWithoutDirectRouterRefusesEarly(t *testing.T) {
 		t.Fatalf("отказ должен быть ДО снимка сети, Snapshot вызван %d раз", plat.snapshotCalls)
 	}
 }
+
+func TestConnectPreservesJournalWhenAbortRestoreFails(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "key.txt")
+	if err := os.WriteFile(keyPath, []byte("test-key"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := &Store{Path: filepath.Join(dir, "state.json")}
+	plat := newFakePlatform()
+	plat.restoreErr = fmt.Errorf("injected restore failure")
+	client := NewParamsClient(ParamsConfig{Addresses: []params.Address{{Host: "127.0.0.1", Port: 1}}, ConnectTimeout: time.Second, ReadTimeout: time.Second, WalkBudget: 2 * time.Second})
+	_, err := Connect(context.Background(), store, plat, NewStubEngine(), client, ConnectOptions{KeyPath: keyPath, Gateway: "edge.example"})
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	st, err := store.Load()
+	if err != nil || st == nil {
+		t.Fatalf("journal lost: %v", err)
+	}
+	before := plat.snapshotCalls
+	_, err = Connect(context.Background(), store, plat, NewStubEngine(), client, ConnectOptions{KeyPath: keyPath, Gateway: "edge.example"})
+	if err == nil || plat.snapshotCalls != before {
+		t.Fatal("retry overwrote unresolved journal")
+	}
+}
