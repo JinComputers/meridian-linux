@@ -1,0 +1,12 @@
+/build/
+/bin/
+*.key
+*.pem
+*.p12
+.env
+.env.*
+secrets.env
+passwords.json
+wg-keys.dat
+test-key.txt
+.DS_Store
