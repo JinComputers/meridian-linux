@@ -1,4 +1,4 @@
-meridian-vpn (0.0.0~preview1) UNRELEASED; urgency=low
+meridian-vpn (0.0.1~preview1) UNRELEASED; urgency=low
 
   * Non-release owner preview; service is not started automatically at install.
 
