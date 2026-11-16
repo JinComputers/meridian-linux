@@ -190,8 +190,9 @@ func (h *helper) runSession(ctx context.Context, payload core.ControlConnectPayl
 func main() {
 	uid := flag.Uint("uid", 0, "UID единственного пользователя")
 	enabled := flag.Bool("enable-unverified-network", false, "разрешить экспериментальное подключение (только для изолированного стенда)")
+	recoverNetwork := flag.Bool("recover-network", false, "явно восстановить сеть после сбоя и вернуть обычный доступ")
 	flag.Parse()
-	if *uid == 0 || uint64(*uid) >= uint64(^uint32(0)) {
+	if !*recoverNetwork && (*uid == 0 || uint64(*uid) >= uint64(^uint32(0))) {
 		fmt.Fprintln(os.Stderr, "укажите непустой UID пользователя")
 		os.Exit(1)
 	}
@@ -201,6 +202,14 @@ func main() {
 		os.Exit(1)
 	}
 	defer lock.Close()
+	if *recoverNetwork {
+		if err := linux.RecoverJournal(context.Background(), linux.NewPlatform(nil)); err != nil {
+			fmt.Fprintln(os.Stderr, "Восстановление сети не завершено:", err)
+			os.Exit(1)
+		}
+		fmt.Println("Восстановление сети завершено")
+		return
+	}
 	h := &helper{clients: map[*client]bool{}, platform: linux.NewPlatform(nil), store: &core.Store{Path: "/run/meridian/state.json"}, enabled: *enabled}
 	h.run = h.runSession
 	if st, err := h.store.Load(); err != nil || st != nil {
