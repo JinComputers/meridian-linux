@@ -179,6 +179,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "укажите непустой UID пользователя")
 		os.Exit(1)
 	}
+	lock, err := linux.AcquireHelperLock()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer lock.Close()
 	h := &helper{clients: map[*client]bool{}, platform: linux.NewPlatform(nil), store: &core.Store{Path: "/run/meridian/state.json"}, enabled: *enabled}
 	h.run = h.runSession
 	if st, err := h.store.Load(); err != nil || st != nil {

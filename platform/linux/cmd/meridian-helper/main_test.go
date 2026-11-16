@@ -113,3 +113,69 @@ func TestSingleSessionAndShutdownWaitsForCleanup(t *testing.T) {
 		t.Fatal("incorrect final state")
 	}
 }
+
+func TestReconnectWaitsForPriorCleanup(t *testing.T) {
+	started := make(chan int, 2)
+	cleaning := make(chan struct{})
+	release := make(chan struct{})
+	runs := 0
+	h := &helper{clients: map[*client]bool{}, enabled: true, run: func(ctx context.Context, _ core.ControlConnectPayload) {
+		runs++
+		n := runs
+		started <- n
+		<-ctx.Done()
+		if n == 1 {
+			close(cleaning)
+			<-release
+		}
+	}}
+	a := dialTest(t, h)
+	b := dialTest(t, h)
+	sendConnect(t, a)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("no first session")
+	}
+	if err := core.WriteControlMessage(a, core.ControlDisconnect, struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-cleaning:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup did not start")
+	}
+	sendConnect(t, b)
+	msg, err := core.ReadControlMessage(b)
+	if err != nil || msg.Type != core.ControlError {
+		t.Fatalf("second connection accepted during cleanup: %v", err)
+	}
+	e, err := core.DecodeControlPayload[core.ControlErrorPayload](msg)
+	if err != nil || e.Code != core.ControlErrAlreadyRunning {
+		t.Fatalf("unexpected error %v %v", e, err)
+	}
+	close(release)
+	deadline := time.Now().Add(time.Second)
+	for {
+		h.mu.Lock()
+		active := h.cancel != nil
+		h.mu.Unlock()
+		if !active {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("first session did not finish")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	sendConnect(t, b)
+	select {
+	case n := <-started:
+		if n != 2 {
+			t.Fatal("unexpected run")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("retry not started after cleanup")
+	}
+	h.shutdown()
+}
