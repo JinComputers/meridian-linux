@@ -26,43 +26,39 @@ type client struct {
 func (c *client) send(t core.ControlMessageType, p any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.sendLocked(t, p)
+}
+
+// sendLocked requires c.mu and preserves ordering with state snapshots.
+func (c *client) sendLocked(t core.ControlMessageType, p any) error {
 	_ = c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	return core.WriteControlMessage(c.conn, t, p)
 }
 
 type helper struct {
-	mu       sync.Mutex
-	clients  map[*client]bool
-	cancel   context.CancelFunc
-	done     chan struct{}
-	state    core.ControlStatePayload
-	platform *linux.Platform
-	store    *core.Store
-	enabled  bool
-	closing  bool
-	run      func(context.Context, core.ControlConnectPayload)
+	mu        sync.Mutex
+	eventsMu  sync.Mutex
+	clients   map[*client]bool
+	cancel    context.CancelFunc
+	done      chan struct{}
+	state     core.ControlStatePayload
+	lastError *core.ControlErrorPayload
+	platform  *linux.Platform
+	store     *core.Store
+	enabled   bool
+	closing   bool
+	run       func(context.Context, core.ControlConnectPayload)
 }
 
 func (h *helper) broadcast(t core.ControlMessageType, p any) error {
-	h.mu.Lock()
-	if t == core.ControlState {
-		if s, ok := p.(core.ControlStatePayload); ok {
-			h.state = s
-		}
-	}
-	cs := make([]*client, 0, len(h.clients))
-	for c := range h.clients {
-		cs = append(cs, c)
-	}
-	h.mu.Unlock()
-	// Engine events or errors may contain sensitive data; this prototype emits
-	// status and a generic error only, never raw diagnostic payloads.
+	// Keep concurrent event deliveries in the same order as state updates.
+	h.eventsMu.Lock()
+	defer h.eventsMu.Unlock()
+	// Raw diagnostics can contain secrets; retain only an allowlisted failure.
 	if t == core.ControlEvent {
 		return nil
 	}
 	if t == core.ControlError {
-		// Preserve only known, non-sensitive failure codes. Raw engine errors
-		// can include addresses or credentials and must not be forwarded.
 		failure := ""
 		if original, ok := p.(core.ControlErrorPayload); ok {
 			switch original.Failure {
@@ -79,10 +75,43 @@ func (h *helper) broadcast(t core.ControlMessageType, p any) error {
 		}
 		p = core.ControlErrorPayload{Code: code, Message: "Не удалось подключиться", Failure: failure}
 	}
+	h.mu.Lock()
+	if t == core.ControlState {
+		if state, ok := p.(core.ControlStatePayload); ok {
+			h.state = state
+			h.lastError = nil
+		}
+	} else if t == core.ControlError {
+		if e, ok := p.(core.ControlErrorPayload); ok {
+			h.state = core.ControlStatePayload{}
+			h.lastError = &e
+		}
+	}
+	cs := make([]*client, 0, len(h.clients))
+	for c := range h.clients {
+		cs = append(cs, c)
+	}
+	h.mu.Unlock()
 	for _, c := range cs {
 		_ = c.send(t, p)
 	}
 	return nil
+}
+
+// sendSnapshot returns the latest error instead of stale Connected state.
+// Reserve the client write lock before releasing h.mu so an older snapshot
+// cannot be written after a newer broadcast.
+func (h *helper) sendSnapshot(c *client) error {
+	h.mu.Lock()
+	c.mu.Lock()
+	var typ core.ControlMessageType = core.ControlState
+	var payload any = h.state
+	if h.lastError != nil {
+		typ, payload = core.ControlError, *h.lastError
+	}
+	h.mu.Unlock()
+	defer c.mu.Unlock()
+	return c.sendLocked(typ, payload)
 }
 func (h *helper) serve(n net.Conn, uid uint32) {
 	defer n.Close()
@@ -101,10 +130,9 @@ func (h *helper) serve(n net.Conn, uid uint32) {
 		return
 	}
 	h.clients[c] = true
-	st := h.state
 	h.mu.Unlock()
 	defer func() { h.mu.Lock(); delete(h.clients, c); h.mu.Unlock() }()
-	_ = c.send(core.ControlState, st)
+	_ = h.sendSnapshot(c)
 	for {
 		env, err := core.ReadControlMessage(n)
 		if err != nil {
@@ -112,10 +140,7 @@ func (h *helper) serve(n net.Conn, uid uint32) {
 		}
 		switch env.Type {
 		case core.ControlStatusQuery:
-			h.mu.Lock()
-			st = h.state
-			h.mu.Unlock()
-			_ = c.send(core.ControlState, st)
+			_ = h.sendSnapshot(c)
 		case core.ControlDisconnect:
 			h.mu.Lock()
 			cancel := h.cancel

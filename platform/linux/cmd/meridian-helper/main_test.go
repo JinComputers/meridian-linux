@@ -205,3 +205,61 @@ func TestBroadcastFailureNeverExposesRawError(t *testing.T) {
 		b.Close()
 	}
 }
+
+func TestCleanupFailureSurvivesClientReconnect(t *testing.T) {
+	store := &core.Store{Path: filepath.Join(t.TempDir(), "journal.json")}
+	if err := store.Save(&core.State{PID: os.Getpid(), StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	h := &helper{clients: map[*client]bool{}, store: store}
+	if err := h.broadcast(core.ControlState, core.ControlStatePayload{Connected: true}); err != nil {
+		t.Fatal(err)
+	}
+	first := dialTest(t, h)
+	done := make(chan struct{})
+	go func() {
+		_ = h.broadcast(core.ControlError, core.ControlErrorPayload{Message: "synthetic-secret", Failure: "synthetic-secret"})
+		close(done)
+	}()
+	if msg, err := core.ReadControlMessage(first); err != nil || msg.Type != core.ControlError {
+		t.Fatalf("initial error missing: %v %v", msg, err)
+	}
+	<-done
+	_ = first.Close()
+	l, err := net.Listen("unix", filepath.Join(t.TempDir(), "s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		c, e := l.Accept()
+		_ = l.Close()
+		if e == nil {
+			h.serve(c, uint32(os.Getuid()))
+		}
+	}()
+	second, err := net.Dial("unix", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if err := core.PerformControlHelloAsClient(second, "test"); err != nil {
+		t.Fatal(err)
+	}
+	check := func() {
+		t.Helper()
+		msg, err := core.ReadControlMessage(second)
+		if err != nil || msg.Type != core.ControlError {
+			t.Fatalf("expected retained error, got %v %v", msg, err)
+		}
+		got, err := core.DecodeControlPayload[core.ControlErrorPayload](msg)
+		if err != nil || got.Code != "cleanup_failed" || got.Failure != "" || got.Message != "Не удалось подключиться" {
+			t.Fatalf("unexpected error: %+v %v", got, err)
+		}
+	}
+	check()
+	if err := core.WriteControlMessage(second, core.ControlStatusQuery, nil); err != nil {
+		t.Fatal(err)
+	}
+	check()
+	h.shutdown()
+}

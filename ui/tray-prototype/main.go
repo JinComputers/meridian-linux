@@ -719,6 +719,9 @@ func (a *app) handleEnvelope(env core.ControlEnvelope) {
 		default:
 			a.state.kind = uiDisconnected
 			a.state.address = ""
+			if a.state.notice == "Отключение…" {
+				a.state.notice = ""
+			}
 		}
 		a.state.mu.Unlock()
 		if st.Connected {
