@@ -201,6 +201,11 @@ func (p *Platform) Restore(ctx context.Context, st *core.State) error {
 
 		}
 	}
+	// Keep the fail-closed firewall when interface ownership or inventory is
+	// uncertain. The caller retains the journal and can retry or inspect.
+	if len(failures) != 0 {
+		return errors.Join(failures...)
+	}
 	if st.IPv6Off {
 		name := st.IPv6Service
 		if !validFirewallName(name) {

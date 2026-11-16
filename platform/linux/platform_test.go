@@ -76,8 +76,8 @@ func TestRestoreRefusesUnverifiedInterface(t *testing.T) {
 	if strings.Contains(s, "route del") || strings.Contains(s, "revert meridian0") {
 		t.Fatal("changed unverified interface")
 	}
-	if !strings.Contains(s, "delete table inet "+name) {
-		t.Fatal("own firewall not removed")
+	if strings.Contains(s, "delete table inet "+name) {
+		t.Fatal("must retain fail-closed firewall while interface ownership is uncertain")
 	}
 }
 func TestRestoreAbsentIdempotent(t *testing.T) {

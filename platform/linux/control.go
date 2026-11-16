@@ -40,9 +40,8 @@ func PeerUID(c net.Conn) (uint32, error) {
 	return cred.Uid, nil
 }
 
-// ListenControl requires a root-owned non-writable directory and never unlinks
-// a pre-existing socket, even one that appears stale. A root administrator must
-// clean it after inspecting ownership if the previous service died uncleanly.
+// ListenControl requires the caller to hold AcquireHelperLock for its lifetime.
+// Legacy sockets without a trusted identity marker require manual inspection.
 func ListenControl(uid uint32) (net.Listener, error) { return listenControlAt("/run/meridian", uid) }
 
 func listenControlAt(dir string, uid uint32) (net.Listener, error) {
@@ -61,11 +60,10 @@ func listenControlAt(dir string, uid uint32) (net.Listener, error) {
 	if !ok || !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 || st.Uid != 0 || fi.Mode().Perm()&0022 != 0 {
 		return nil, errors.New("untrusted control directory")
 	}
-	if _, err = os.Lstat(path); err == nil {
-		return nil, errors.New("control path already exists; refusing to remove it")
-	} else if !os.IsNotExist(err) {
+	if err = recoverControlSocket(dir, uid); err != nil {
 		return nil, err
 	}
+
 	l, err := net.Listen("unix", path)
 	if err != nil {
 		return nil, err
@@ -75,6 +73,9 @@ func listenControlAt(dir string, uid uint32) (net.Listener, error) {
 		return cleanup(err)
 	}
 	if err = os.Chown(path, int(uid), 0); err != nil {
+		return cleanup(err)
+	}
+	if err = saveSocketIdentity(dir, uid); err != nil {
 		return cleanup(err)
 	}
 	return l, nil
