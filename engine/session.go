@@ -1712,6 +1712,7 @@ func (s *session) auth(
 	// AUTH|<пароль>|<устройство>|<возможности>
 	// Пароль в лог не попадает никогда. Возможности — попадают: там нет
 	// ничего тайного, а видеть, ушёл ли multi с поколением, надо.
+	caps = clientPlatformCaps(caps)
 	authMsg := fmt.Sprintf("AUTH|%s|%s|%s", password, deviceID, caps)
 	s.logf("отправляю AUTH (%s), срок ответа %s", caps, budget)
 
