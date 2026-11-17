@@ -22,3 +22,7 @@ override_dh_fixperms:
 
 override_dh_installsystemd:
 	dh_installsystemd --name=meridian-helper --no-enable --no-start --no-restart-after-upgrade
+
+# Go emits compressed debug sections that dwz cannot combine.
+override_dh_dwz:
+	@true
